@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Nexus Live Sensor</title>
+  <style>
+    :root {
+      --bg: #080b10;
+      --panel: #111824;
+      --panel-2: #151e2b;
+      --border: rgba(148, 163, 184, 0.18);
+      --text: #e5edf7;
+      --muted: #94a3b8;
+      --subtle: #64748b;
+      --primary: #38bdf8;
+      --normal: #22c55e;
+      --warning: #f59e0b;
+      --critical: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 1rem;
+      background:
+        linear-gradient(135deg, rgba(56, 189, 248, 0.08), transparent 36%),
+        linear-gradient(180deg, #0b1018, var(--bg));
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .shell {
+      width: min(440px, 100%);
+      display: grid;
+      gap: 0.8rem;
+    }
+
+    .card {
+      background: rgba(17, 24, 36, 0.94);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.34);
+    }
+
+    .hero {
+      text-align: center;
+      padding: 1.2rem 1rem;
+    }
+
+    .logo {
+      color: #f8fafc;
+      font-size: 1.05rem;
+      font-weight: 850;
+      line-height: 1.2;
+    }
+
+    .sub {
+      color: var(--muted);
+      font-size: 0.76rem;
+      line-height: 1.45;
+      margin-top: 0.32rem;
+    }
+
+    .label {
+      color: var(--subtle);
+      font-size: 0.62rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .control-group {
+      display: grid;
+      gap: 0.42rem;
+      margin-top: 0.9rem;
+      text-align: left;
+    }
+
+    select,
+    input[type="url"],
+    input[type="range"] {
+      width: 100%;
+    }
+
+    select,
+    input[type="url"] {
+      min-height: 42px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(8, 11, 16, 0.88);
+      color: var(--text);
+      padding: 0.65rem 0.75rem;
+      font: inherit;
+      font-size: 0.86rem;
+      font-weight: 700;
+      outline: none;
+    }
+
+    select option {
+      color: #111827;
+    }
+
+    .accel-display {
+      margin: 1rem 0 0.3rem;
+      color: var(--primary);
+      font-size: clamp(3.8rem, 18vw, 5.8rem);
+      font-weight: 950;
+      line-height: 0.92;
+      transition: color 0.22s ease;
+    }
+
+    .accel-display.warning {
+      color: var(--warning);
+    }
+
+    .accel-display.critical {
+      color: var(--critical);
+    }
+
+    .axes {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.55rem;
+      margin-top: 0.9rem;
+    }
+
+    .axis-box,
+    .status-bar,
+    .sensor-pill {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(8, 11, 16, 0.7);
+    }
+
+    .axis-box {
+      padding: 0.65rem 0.4rem;
+      text-align: center;
+    }
+
+    .axis-val {
+      color: #f8fafc;
+      font-size: 0.92rem;
+      font-weight: 850;
+      margin-top: 0.18rem;
+    }
+
+    .status-bar {
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.62rem 0.8rem;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 800;
+      line-height: 1.35;
+      text-align: center;
+    }
+
+    .status-bar.connected {
+      color: #bbf7d0;
+      border-color: rgba(34, 197, 94, 0.34);
+      background: rgba(34, 197, 94, 0.1);
+    }
+
+    .status-bar.warning {
+      color: #fde68a;
+      border-color: rgba(245, 158, 11, 0.34);
+      background: rgba(245, 158, 11, 0.1);
+    }
+
+    .status-bar.disconnected {
+      color: #fecaca;
+      border-color: rgba(239, 68, 68, 0.34);
+      background: rgba(239, 68, 68, 0.1);
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.55rem;
+      margin-top: 0.85rem;
+    }
+
+    .btn {
+      min-height: 44px;
+      border: 1px solid rgba(56, 189, 248, 0.34);
+      border-radius: 8px;
+      background: linear-gradient(145deg, #2563eb, #0284c7);
+      color: #f8fafc;
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 850;
+      transition: transform 0.16s ease, opacity 0.16s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn.secondary {
+      background: rgba(30, 41, 59, 0.72);
+      border-color: var(--border);
+      color: var(--text);
+    }
+
+    .sensor-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.55rem;
+    }
+
+    .sensor-pill {
+      padding: 0.62rem;
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 800;
+      line-height: 1.35;
+    }
+
+    .sensor-pill strong {
+      display: block;
+      color: #f8fafc;
+      font-size: 0.76rem;
+      margin-bottom: 0.12rem;
+    }
+
+    .simulator {
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .range-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .range-value {
+      min-width: 3.5rem;
+      color: #f8fafc;
+      font-size: 1rem;
+      font-weight: 900;
+      text-align: right;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 0.73rem;
+      line-height: 1.5;
+    }
+
+    .hint code {
+      color: #bae6fd;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.7rem;
+    }
+
+    @media (max-width: 420px) {
+      .button-row,
+      .sensor-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="card hero">
+      <div class="logo">Nexus Live Sensor</div>
+      <div class="sub">Phone accelerometer bridge for factory telemetry</div>
+
+      <div class="control-group">
+        <label class="label" for="machine-select">Target Machine</label>
+        <select id="machine-select">
+          <option value="PUMP_01">PUMP_01</option>
+          <option value="VALVE_A">VALVE_A</option>
+          <option value="MOTOR_02" selected>MOTOR_02</option>
+          <option value="COMPRESSOR_B">COMPRESSOR_B</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label class="label" for="backend-url">Backend Endpoint</label>
+        <input id="backend-url" type="url" autocomplete="off">
+      </div>
+
+      <div class="label" style="margin-top: 1.2rem;">Acceleration</div>
+      <div class="accel-display" id="accel-value">0.0</div>
+      <div class="sub" id="source-label">m/s2</div>
+
+      <div class="axes">
+        <div class="axis-box">
+          <div class="label">X</div>
+          <div class="axis-val" id="ax">0.0</div>
+        </div>
+        <div class="axis-box">
+          <div class="label">Y</div>
+          <div class="axis-val" id="ay">0.0</div>
+        </div>
+        <div class="axis-box">
+          <div class="label">Z</div>
+          <div class="axis-val" id="az">0.0</div>
+        </div>
+      </div>
+
+      <div class="button-row">
+        <button class="btn" id="start-btn" type="button">Start Sensor</button>
+        <button class="btn secondary" id="calibrate-btn" type="button">Calibrate</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="status-bar disconnected" id="status">Sensor not started</div>
+      <div class="sensor-grid" style="margin-top: 0.75rem;">
+        <div class="sensor-pill">
+          <strong id="motion-support">Checking</strong>
+          DeviceMotion
+        </div>
+        <div class="sensor-pill">
+          <strong id="secure-support">Checking</strong>
+          Secure Context
+        </div>
+      </div>
+    </section>
+
+    <section class="card simulator">
+      <div>
+        <div class="label">Manual Sensor Simulator</div>
+        <p class="hint" style="margin-top: 0.25rem;">Use this if the browser blocks physical motion sensors.</p>
+      </div>
+
+      <div class="range-row">
+        <input id="sim-range" type="range" min="0" max="24" value="6" step="0.1">
+        <div class="range-value"><span id="sim-value">6.0</span></div>
+      </div>
+
+      <div class="button-row" style="margin-top: 0;">
+        <button class="btn secondary" id="send-test-btn" type="button">Send Pulse</button>
+        <button class="btn secondary" id="demo-btn" type="button">Auto Demo</button>
+      </div>
+
+      <p class="hint">
+        On iPhone, open this page over HTTPS and allow Motion & Orientation access. If you tunnel the dashboard, tunnel the backend too and open <code>/sensor</code> from the backend URL.
+      </p>
+    </section>
+  </main>
+
+  <script>
+    const accelEl = document.getElementById('accel-value');
+    const sourceEl = document.getElementById('source-label');
+    const statusEl = document.getElementById('status');
+    const axEl = document.getElementById('ax');
+    const ayEl = document.getElementById('ay');
+    const azEl = document.getElementById('az');
+    const machineSelect = document.getElementById('machine-select');
+    const backendInput = document.getElementById('backend-url');
+    const startBtn = document.getElementById('start-btn');
+    const calibrateBtn = document.getElementById('calibrate-btn');
+    const motionSupportEl = document.getElementById('motion-support');
+    const secureSupportEl = document.getElementById('secure-support');
+    const simRange = document.getElementById('sim-range');
+    const simValue = document.getElementById('sim-value');
+    const sendTestBtn = document.getElementById('send-test-btn');
+    const demoBtn = document.getElementById('demo-btn');
+
+    const params = new URLSearchParams(window.location.search);
+    const initialBackendUrl = params.get('backend')
+      || localStorage.getItem('nexusSensorBackendUrl')
+      || window.location.origin;
+
+    let lastSend = 0;
+    let started = false;
+    let gravityBaseline = null;
+    let noEventTimer = null;
+    let demoTimer = null;
+    let accelerometer = null;
+
+    backendInput.value = normalizeUrl(initialBackendUrl);
+    motionSupportEl.textContent = typeof DeviceMotionEvent !== 'undefined' ? 'Available' : 'Missing';
+    secureSupportEl.textContent = window.isSecureContext ? 'Yes' : 'No';
+
+    function normalizeUrl(url) {
+      return String(url || '').trim().replace(/\/+$/, '');
+    }
+
+    function getBackendUrl() {
+      const url = normalizeUrl(backendInput.value || window.location.origin);
+      localStorage.setItem('nexusSensorBackendUrl', url);
+      return url;
+    }
+
+    function setStatus(text, mode) {
+      statusEl.textContent = text;
+      statusEl.className = `status-bar ${mode || ''}`.trim();
+    }
+
+    function updateDisplay(x, y, z, total, source) {
+      axEl.textContent = x.toFixed(1);
+      ayEl.textContent = y.toFixed(1);
+      azEl.textContent = z.toFixed(1);
+      accelEl.textContent = total.toFixed(1);
+      sourceEl.textContent = `${source} / m/s2`;
+
+      accelEl.className = 'accel-display';
+      if (total > 15) accelEl.classList.add('critical');
+      else if (total > 8) accelEl.classList.add('warning');
+    }
+
+    async function sendReading(total, source) {
+      const now = Date.now();
+      if (now - lastSend < 180) return;
+      lastSend = now;
+
+      try {
+        const response = await fetch(`${getBackendUrl()}/api/sensor`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            targetMachine: machineSelect.value,
+            acceleration: Number(total.toFixed(3)),
+            source,
+          }),
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        setStatus(`Streaming ${source} to ${machineSelect.value}`, 'connected');
+      } catch (error) {
+        console.error('Sensor send error:', error);
+        setStatus('Cannot reach backend. Check the endpoint URL.', 'disconnected');
+      }
+    }
+
+    function processReading(x, y, z, source) {
+      const total = Math.sqrt(x * x + y * y + z * z);
+      updateDisplay(x, y, z, total, source);
+      sendReading(total, source);
+    }
+
+    function handleMotion(event) {
+      clearTimeout(noEventTimer);
+
+      const linear = event.acceleration;
+      const hasLinear = linear && [linear.x, linear.y, linear.z].some((value) => value !== null);
+
+      if (hasLinear) {
+        processReading(linear.x || 0, linear.y || 0, linear.z || 0, 'DeviceMotion');
+        return;
+      }
+
+      const gravity = event.accelerationIncludingGravity;
+      if (!gravity || [gravity.x, gravity.y, gravity.z].every((value) => value === null)) return;
+
+      if (!gravityBaseline) {
+        gravityBaseline = {
+          x: gravity.x || 0,
+          y: gravity.y || 0,
+          z: gravity.z || 0,
+        };
+      }
+
+      processReading(
+        (gravity.x || 0) - gravityBaseline.x,
+        (gravity.y || 0) - gravityBaseline.y,
+        (gravity.z || 0) - gravityBaseline.z,
+        'Gravity delta',
+      );
+    }
+
+    async function startDeviceMotion() {
+      if (typeof DeviceMotionEvent === 'undefined') {
+        return false;
+      }
+
+      if (typeof DeviceMotionEvent.requestPermission === 'function') {
+        const state = await DeviceMotionEvent.requestPermission();
+        if (state !== 'granted') {
+          setStatus('Motion permission denied by browser.', 'disconnected');
+          return true;
+        }
+      }
+
+      window.addEventListener('devicemotion', handleMotion);
+      setStatus('Sensor active. Waiting for motion sample...', 'warning');
+      noEventTimer = window.setTimeout(() => {
+        setStatus('No motion sample received. Try HTTPS or use the simulator below.', 'warning');
+      }, 2800);
+      return true;
+    }
+
+    function startGenericAccelerometer() {
+      if (!('Accelerometer' in window)) return false;
+
+      try {
+        accelerometer = new Accelerometer({ frequency: 12 });
+        accelerometer.addEventListener('reading', () => {
+          clearTimeout(noEventTimer);
+          processReading(accelerometer.x || 0, accelerometer.y || 0, accelerometer.z || 0, 'Accelerometer');
+        });
+        accelerometer.addEventListener('error', (event) => {
+          console.warn('Accelerometer error:', event.error);
+          setStatus('Accelerometer blocked. Use DeviceMotion or simulator.', 'warning');
+        });
+        accelerometer.start();
+        setStatus('Accelerometer active. Waiting for samples...', 'warning');
+        return true;
+      } catch (error) {
+        console.warn('Accelerometer unavailable:', error);
+        return false;
+      }
+    }
+
+    async function startSensors() {
+      if (started) return;
+      started = true;
+      startBtn.textContent = 'Sensor Started';
+      startBtn.disabled = true;
+      setStatus('Requesting sensor access...', 'warning');
+
+      try {
+        const motionStarted = await startDeviceMotion();
+        if (!motionStarted && !startGenericAccelerometer()) {
+          setStatus('No physical motion sensor API detected. Use simulator below.', 'disconnected');
+        }
+      } catch (error) {
+        console.error('Sensor start error:', error);
+        if (!startGenericAccelerometer()) {
+          setStatus('Sensor permission failed. Use simulator below.', 'disconnected');
+        }
+      }
+    }
+
+    function sendSimulatedReading() {
+      const value = Number(simRange.value);
+      updateDisplay(value, value * 0.38, value * 0.18, value, 'Simulator');
+      sendReading(value, 'Simulator');
+    }
+
+    startBtn.addEventListener('click', startSensors);
+    calibrateBtn.addEventListener('click', () => {
+      gravityBaseline = null;
+      setStatus('Calibration reset. Hold the phone still for the next sample.', 'warning');
+    });
+    backendInput.addEventListener('change', () => {
+      backendInput.value = getBackendUrl();
+      setStatus('Backend endpoint updated.', 'warning');
+    });
+    simRange.addEventListener('input', () => {
+      simValue.textContent = Number(simRange.value).toFixed(1);
+    });
+    sendTestBtn.addEventListener('click', sendSimulatedReading);
+    demoBtn.addEventListener('click', () => {
+      if (demoTimer) {
+        window.clearInterval(demoTimer);
+        demoTimer = null;
+        demoBtn.textContent = 'Auto Demo';
+        setStatus('Auto demo stopped.', 'warning');
+        return;
+      }
+
+      demoBtn.textContent = 'Stop Demo';
+      demoTimer = window.setInterval(() => {
+        const wave = 8 + Math.sin(Date.now() / 420) * 5 + Math.random() * 3;
+        simRange.value = wave.toFixed(1);
+        simValue.textContent = Number(simRange.value).toFixed(1);
+        sendSimulatedReading();
+      }, 420);
+    });
+  </script>
+</body>
+</html>
