@@ -159,7 +159,21 @@ export default function App() {
 
   const handleAcknowledge = useCallback((id) => setAcknowledged((prev) => new Set(prev).add(id)), []);
   const handleAcknowledgeAll = useCallback(() => activeAlerts.forEach(alert => setAcknowledged((prev) => new Set(prev).add(alert.id))), [activeAlerts]);
-  const handleInvestigate = useCallback((id) => setInvestigateId(id), []);
+  const handleInvestigate = useCallback((id) => {
+    history.pushState({ investigateId: id }, '');
+    setInvestigateId(id);
+  }, []);
+  useEffect(() => {
+    const handlePopState = (e) => {
+      setInvestigateId((current) => {
+        if (current) return null;
+        return current;
+      });
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   const handleMapNodeMove = useCallback((id, coords) => setMapNodeSettings((prev) => ({ ...prev, [id]: { ...(prev[id] || {}), ...coords } })), []);
   const handleMapNodeSettingChange = useCallback((id, patch) => setMapNodeSettings((prev) => ({ ...prev, [id]: { ...(prev[id] || {}), ...patch } })), []);
   const handleResetMapNode = useCallback((id) => setMapNodeSettings((prev) => { const next = { ...prev }; delete next[id]; return next; }), []);
@@ -286,7 +300,7 @@ export default function App() {
           acknowledged={acknowledged}
           onAcknowledge={handleAcknowledge}
           onCommand={handleMachineCommand}
-          onClose={() => setInvestigateId(null)}
+          onClose={() => history.back()}
           fullscreenGraph={fullscreenGraph}
           setFullscreenGraph={setFullscreenGraph}
         />
