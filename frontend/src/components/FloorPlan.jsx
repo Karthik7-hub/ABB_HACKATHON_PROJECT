@@ -1,9 +1,10 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
-import { X, Power, RotateCcw, Activity, AlertTriangle, CheckCircle2, Thermometer, Gauge, Radio, Info, Maximize, Minimize } from 'lucide-react';
+import { X, Power, RotateCcw, Activity, AlertTriangle, CheckCircle2, Thermometer, Gauge, Radio, Maximize, Minimize } from 'lucide-react';
 import { formatMetric, toNumber } from '../utils/helpers';
 
-const CANVAS_W = 900;
-const CANVAS_H = 480;
+// Calibrated to fit all 4 zones fully on-screen at 100% zoom
+const CANVAS_W = 1150;
+const CANVAS_H = 680;
 
 export default function FloorPlan({
     telemetry, metaRegistry, onNodeClick, mapLayout, setMapLayout,
@@ -12,32 +13,71 @@ export default function FloorPlan({
     const [isFullscreen, setIsFullscreen] = useState(false);
 
     // PAN & ZOOM STATES
-    const [zoom, setZoom] = useState(1);
+    const [zoom, setZoom] = useState(1.0); // Default to 100%
     const [pan, setPan] = useState({ x: 0, y: 0 });
     const [isPanning, setIsPanning] = useState(false);
 
     const containerRef = useRef(null);
+    const zoomRef = useRef(zoom);
+    const panRef = useRef(pan);
+    const clampPanRef = useRef();
 
-    const PAN_LIMIT = 400;
-    const clampPan = (newX, newY) => ({
-        x: Math.max(-PAN_LIMIT, Math.min(PAN_LIMIT, newX)),
-        y: Math.max(-PAN_LIMIT, Math.min(PAN_LIMIT, newY))
-    });
+    // Keep refs in sync for the event listeners without triggering re-binds
+    useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+    useEffect(() => { panRef.current = pan; }, [pan]);
 
-    // TRACKPAD PINCH-TO-ZOOM & TWO-FINGER PAN LOGIC
+    // Dynamic Bounding Box
+    const clampPan = (newX, newY, currentZoom) => {
+        const container = containerRef.current;
+        if (!container) return { x: newX, y: newY };
+
+        const viewportW = container.clientWidth;
+        const viewportH = container.clientHeight;
+        const contentW = CANVAS_W * currentZoom;
+        const contentH = CANVAS_H * currentZoom;
+
+        const padding = 60;
+
+        const maxX = Math.max(0, (contentW - viewportW) / 2 + padding);
+        const maxY = Math.max(0, (contentH - viewportH) / 2 + padding);
+
+        return {
+            x: Math.max(-maxX, Math.min(maxX, newX)),
+            y: Math.max(-maxY, Math.min(maxY, newY))
+        };
+    };
+    clampPanRef.current = clampPan;
+
     useEffect(() => {
         const container = containerRef.current;
         if (!container) return;
 
         const handleWheel = (e) => {
-            e.preventDefault();
-
             if (e.ctrlKey) {
+                e.preventDefault(); // Always trap Ctrl+Scroll for zooming
                 const zoomDirection = e.deltaY > 0 ? -1 : 1;
                 const zoomStep = Math.abs(e.deltaY) < 50 ? 0.02 : 0.08;
-                setZoom(prevZoom => Math.min(Math.max(0.6, prevZoom + (zoomDirection * zoomStep)), 3.0));
+                setZoom(prevZoom => {
+                    const newZoom = Math.min(Math.max(0.3, prevZoom + (zoomDirection * zoomStep)), 3.0);
+                    setPan(prevPan => clampPanRef.current(prevPan.x, prevPan.y, newZoom));
+                    return newZoom;
+                });
             } else {
-                setPan(prevPan => clampPan(prevPan.x - e.deltaX, prevPan.y - e.deltaY));
+                // Calculate where the pan *wants* to go synchronously
+                const currentPan = panRef.current;
+                const targetX = currentPan.x - e.deltaX;
+                const targetY = currentPan.y - e.deltaY;
+
+                // Clamp it to the boundaries
+                const clampedPan = clampPanRef.current(targetX, targetY, zoomRef.current);
+
+                // If the map actually moved, prevent the page from scrolling
+                if (clampedPan.x !== currentPan.x || clampedPan.y !== currentPan.y) {
+                    e.preventDefault();
+                    setPan(clampedPan);
+                }
+                // If it DIDN'T move (we are at the edge), we skip e.preventDefault() 
+                // and the main webpage will scroll normally!
             }
         };
 
@@ -55,23 +95,53 @@ export default function FloorPlan({
 
             if (mapLayout === 'ecosystem') {
                 const severity = toNumber(machine.severity_score);
-                const radius = 240 - (severity / 100) * 240;
+                const radius = 280 - (severity / 100) * 280;
                 const angle = (index * (360 / Math.max(telemetry.length, 1))) * (Math.PI / 180);
                 x = `calc(50% + ${radius * Math.cos(angle)}px - 90px)`;
                 y = `calc(50% + ${radius * Math.sin(angle)}px - 60px)`;
                 pos[machine.id] = { x: custom.x ?? x, y: custom.y ?? y };
             }
             else if (mapLayout === 'zones') {
-                if (meta.zone === 'A') { x = 60; y = 100; } else if (meta.zone === 'B') { x = 580; y = 100; }
-                else if (meta.zone === 'C') { x = 60; y = 380; } else { x = 580; y = 380; }
-                x += (index % 3) * 190; y += (index % 3) * 40;
+                const zoneKey = meta.zone || 'D';
+                const zoneMachines = telemetry.filter(m => (metaRegistry[m.id]?.zone || 'D') === zoneKey);
+                const zoneIndex = zoneMachines.findIndex(m => m.id === machine.id);
+
+                const zoneOrigins = {
+                    A: { x: 24, y: 24 },
+                    B: { x: 591, y: 24 },
+                    C: { x: 24, y: 356 },
+                    D: { x: 591, y: 356 }
+                };
+                const origin = zoneOrigins[zoneKey] || zoneOrigins['D'];
+
+                const ZONE_W = 535, ZONE_H = 300;
+                const NODE_W = 180, NODE_H = 135;
+                const TITLE_OFFSET = 60;
+
+                const COLS = Math.min(3, Math.ceil(Math.sqrt(zoneMachines.length)));
+                const col = zoneIndex % COLS;
+                const row = Math.floor(zoneIndex / COLS);
+                const totalCols = Math.min(COLS, zoneMachines.length);
+                const totalRows = Math.ceil(zoneMachines.length / COLS);
+
+                const startX = origin.x + 16;
+                const endX = origin.x + ZONE_W - 16 - NODE_W;
+                const availableW = Math.max(0, endX - startX);
+
+                const startY = origin.y + TITLE_OFFSET;
+                const endY = origin.y + ZONE_H - 16 - NODE_H;
+                const availableH = Math.max(0, endY - startY);
+
+                x = startX + (totalCols > 1 ? col * (availableW / (totalCols - 1)) : availableW / 2);
+                y = startY + (totalRows > 1 ? row * (availableH / (totalRows - 1)) : availableH / 2);
+
                 pos[machine.id] = { x: custom.x ?? x, y: custom.y ?? y };
             }
             else if (mapLayout === 'flow') {
-                if (meta.type === 'Pump') { x = 50; y = 80 + (index * 120); }
-                else if (meta.type === 'Valve') { x = 300; y = 80 + (index * 120); }
-                else if (meta.type === 'Compressor') { x = 550; y = 80 + (index * 120); }
-                else { x = 800; y = 80 + (index * 120); }
+                if (meta.type === 'Pump') { x = 60; y = 80 + (index * 130); }
+                else if (meta.type === 'Valve') { x = 340; y = 80 + (index * 130); }
+                else if (meta.type === 'Compressor') { x = 620; y = 80 + (index * 130); }
+                else { x = 900; y = 80 + (index * 130); }
                 pos[machine.id] = { x: custom.x ?? x, y: custom.y ?? y };
             }
         });
@@ -83,7 +153,7 @@ export default function FloorPlan({
     const containerStyle = isFullscreen ? {
         position: 'fixed', inset: 0, zIndex: 99999, backgroundColor: '#020617', overflow: 'hidden'
     } : {
-        position: 'relative', width: '100%', height: `${CANVAS_H}px`, backgroundColor: '#020617',
+        position: 'relative', width: '100%', height: `700px`, backgroundColor: '#020617',
         borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(56,189,248,0.2)',
         boxShadow: 'inset 0 0 100px rgba(0,0,0,0.5)'
     };
@@ -94,7 +164,7 @@ export default function FloorPlan({
     };
     const handleMouseMove = (e) => {
         if (!isPanning) return;
-        setPan(p => clampPan(p.x + e.movementX, p.y + e.movementY));
+        setPan(p => clampPan(p.x + e.movementX, p.y + e.movementY, zoomRef.current));
     };
     const handleMouseUp = () => setIsPanning(false);
 
@@ -104,7 +174,6 @@ export default function FloorPlan({
             onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
             <style>{`@keyframes led-flow { 0% { stroke-dashoffset: 24; } 100% { stroke-dashoffset: 0; } } @keyframes ping { 75%, 100% { transform: scale(2.5); opacity: 0; } }`}</style>
 
-            {/* FLOATING UI ELEMENTS (Static, do not zoom) */}
             <div className="no-pan" style={{ position: 'absolute', top: '1.5rem', left: '1.5rem', right: '1.5rem', zIndex: 50, display: 'flex', justifyContent: 'space-between', alignItems: 'center', pointerEvents: 'none' }}>
                 <div style={{ display: 'flex', gap: '0.5rem', backgroundColor: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(8px)', padding: '6px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', pointerEvents: 'auto' }}>
                     <button onClick={() => setMapLayout('ecosystem')} style={{ padding: '8px 16px', backgroundColor: mapLayout === 'ecosystem' ? 'rgba(56,189,248,0.15)' : 'transparent', color: mapLayout === 'ecosystem' ? '#38bdf8' : '#94a3b8', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s' }}>Risk Command</button>
@@ -116,34 +185,24 @@ export default function FloorPlan({
                 </button>
             </div>
 
-            <div className="no-pan" style={{ position: 'absolute', bottom: '1.5rem', left: '1.5rem', zIndex: 50, backgroundColor: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '1rem', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
-                <p style={{ color: '#94a3b8', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}><Info size={12} /> Map Legend</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px', color: '#cbd5e1' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} /> Stable Operation</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#f59e0b' }} /> Warning / Degradation</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#ef4444' }} /> Critical / Offline</div>
-                </div>
-            </div>
-
             <div className="no-pan" style={{ position: 'absolute', bottom: '1.5rem', right: '1.5rem', zIndex: 50, display: 'flex', alignItems: 'center', gap: '16px', backgroundColor: '#0f172a', padding: '12px 24px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
                 <span style={{ color: '#f8fafc', fontSize: '16px', fontWeight: 700, minWidth: '40px', textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
                 <div style={{ width: '1px', height: '24px', backgroundColor: 'rgba(255,255,255,0.2)' }}></div>
-                <button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', fontSize: '16px', fontWeight: 700, padding: 0 }}>Reset</button>
+                <button onClick={() => { setZoom(1.0); setPan({ x: 0, y: 0 }); }} style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', fontSize: '16px', fontWeight: 700, padding: 0 }}>Reset</button>
             </div>
 
-            {/* BACKGROUND GRID — fills entire container, does NOT pan/zoom */}
             <div style={{
                 position: 'absolute', inset: 0, pointerEvents: 'none',
                 backgroundImage: `linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px)`,
                 backgroundSize: `30px 30px`
             }} />
 
-            {/* CANVAS — fixed size matching container height, pan+zoom applied here only */}
             <div style={{
                 position: 'absolute',
-                left: '50%', top: '0',
+                left: '50%', top: '50%',
                 width: `${CANVAS_W}px`, height: `${CANVAS_H}px`,
                 marginLeft: `-${CANVAS_W / 2}px`,
+                marginTop: `-${CANVAS_H / 2}px`,
                 transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                 transformOrigin: 'center center',
                 cursor: isPanning ? 'grabbing' : 'grab'
@@ -151,18 +210,17 @@ export default function FloorPlan({
 
                 {mapLayout === 'ecosystem' && (
                     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-                        <div style={{ border: '1px dashed rgba(239, 68, 68, 0.4)', width: '180px', height: '180px', borderRadius: '50%', position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', backgroundColor: 'rgba(239, 68, 68, 0.02)' }}></div>
-                        <div style={{ border: '1px dashed rgba(245, 158, 11, 0.4)', width: '380px', height: '380px', borderRadius: '50%', position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', backgroundColor: 'rgba(245, 158, 11, 0.02)' }}></div>
-                        <div style={{ border: '1px dashed rgba(16, 185, 129, 0.4)', width: '560px', height: '560px', borderRadius: '50%', position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', backgroundColor: 'rgba(16, 185, 129, 0.02)' }}></div>
-                        <span style={{ position: 'absolute', top: 'calc(50% - 130px)', left: '50%', transform: 'translateX(-50%)', color: '#ef4444', fontSize: '10px', fontWeight: 800, letterSpacing: '2px' }}>CRITICAL ZONE</span>
+                        <div style={{ border: '1px dashed rgba(239, 68, 68, 0.4)', width: '200px', height: '200px', borderRadius: '50%', position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', backgroundColor: 'rgba(239, 68, 68, 0.02)' }}></div>
+                        <div style={{ border: '1px dashed rgba(245, 158, 11, 0.4)', width: '400px', height: '400px', borderRadius: '50%', position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', backgroundColor: 'rgba(245, 158, 11, 0.02)' }}></div>
+                        <div style={{ border: '1px dashed rgba(16, 185, 129, 0.4)', width: '600px', height: '600px', borderRadius: '50%', position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', backgroundColor: 'rgba(16, 185, 129, 0.02)' }}></div>
                     </div>
                 )}
 
                 {mapLayout === 'zones' && (
-                    <div style={{ position: 'absolute', inset: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: '1.5rem', padding: '4rem 1.5rem 1.5rem 1.5rem', pointerEvents: 'none' }}>
+                    <div style={{ position: 'absolute', inset: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: '2rem', padding: '1.5rem', pointerEvents: 'none' }}>
                         {['A', 'B', 'C', 'D'].map(zone => (
-                            <div key={zone} style={{ border: '2px solid rgba(56, 189, 248, 0.15)', borderRadius: '16px', backgroundColor: 'rgba(15, 23, 42, 0.4)', position: 'relative' }}>
-                                <span style={{ position: 'absolute', top: '1rem', left: '1.2rem', color: 'rgba(56, 189, 248, 0.3)', fontSize: '22px', fontWeight: 800, letterSpacing: '4px' }}>ZONE {zone}</span>
+                            <div key={zone} style={{ border: '2px solid rgba(56, 189, 248, 0.1)', borderRadius: '24px', backgroundColor: 'rgba(15, 23, 42, 0.3)', position: 'relative' }}>
+                                <span style={{ position: 'absolute', top: '1.5rem', left: '2rem', color: 'rgba(56, 189, 248, 0.2)', fontSize: '36px', fontWeight: 900, letterSpacing: '8px' }}>ZONE {zone}</span>
                             </div>
                         ))}
                     </div>
@@ -170,51 +228,50 @@ export default function FloorPlan({
 
                 {mapLayout === 'flow' && (
                     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-                        <div style={{ position: 'absolute', left: 40, top: 0, bottom: 0, borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: '10px', paddingTop: '16px' }}>
-                            <span style={{ color: '#f59e0b', fontSize: '12px', fontWeight: 800, marginRight: '8px' }}>01</span><span style={{ color: '#f8fafc', fontSize: '14px', fontWeight: 700 }}>Inputs</span>
+                        <div style={{ position: 'absolute', left: 20, top: 0, bottom: 0, borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: '15px', paddingTop: '30px' }}>
+                            <span style={{ color: '#f59e0b', fontSize: '14px', fontWeight: 800, marginRight: '10px' }}>01</span><span style={{ color: '#f8fafc', fontSize: '18px', fontWeight: 700 }}>Inputs</span>
                         </div>
-                        <div style={{ position: 'absolute', left: 290, top: 0, bottom: 0, borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: '10px', paddingTop: '16px' }}>
-                            <span style={{ color: '#38bdf8', fontSize: '12px', fontWeight: 800, marginRight: '8px' }}>02</span><span style={{ color: '#f8fafc', fontSize: '14px', fontWeight: 700 }}>Process Core</span>
+                        <div style={{ position: 'absolute', left: 300, top: 0, bottom: 0, borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: '15px', paddingTop: '30px' }}>
+                            <span style={{ color: '#38bdf8', fontSize: '14px', fontWeight: 800, marginRight: '10px' }}>02</span><span style={{ color: '#f8fafc', fontSize: '18px', fontWeight: 700 }}>Process Core</span>
                         </div>
-                        <div style={{ position: 'absolute', left: 540, top: 0, bottom: 0, borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: '10px', paddingTop: '16px' }}>
-                            <span style={{ color: '#10b981', fontSize: '12px', fontWeight: 800, marginRight: '8px' }}>03</span><span style={{ color: '#f8fafc', fontSize: '14px', fontWeight: 700 }}>Control</span>
+                        <div style={{ position: 'absolute', left: 580, top: 0, bottom: 0, borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: '15px', paddingTop: '30px' }}>
+                            <span style={{ color: '#10b981', fontSize: '14px', fontWeight: 800, marginRight: '10px' }}>03</span><span style={{ color: '#f8fafc', fontSize: '18px', fontWeight: 700 }}>Control</span>
                         </div>
-                        <div style={{ position: 'absolute', left: 790, top: 0, bottom: 0, borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: '10px', paddingTop: '16px' }}>
-                            <span style={{ color: '#8b5cf6', fontSize: '12px', fontWeight: 800, marginRight: '8px' }}>04</span><span style={{ color: '#f8fafc', fontSize: '14px', fontWeight: 700 }}>Utilities</span>
+                        <div style={{ position: 'absolute', left: 860, top: 0, bottom: 0, borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: '15px', paddingTop: '30px' }}>
+                            <span style={{ color: '#8b5cf6', fontSize: '14px', fontWeight: 800, marginRight: '10px' }}>04</span><span style={{ color: '#f8fafc', fontSize: '18px', fontWeight: 700 }}>Utilities</span>
                         </div>
                     </div>
                 )}
 
-                <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1 }}>
+                <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1, overflow: 'visible' }}>
                     {mapLayout === 'flow' && (() => {
-                        const realMachines = telemetry.filter(m => !m.synthetic)
+                        const realGroup = telemetry.filter(m => !m.id.startsWith('SIM_'))
                             .map(m => ({ id: m.id, pos: positions[m.id] }))
                             .filter(m => m.pos)
                             .sort((a, b) => Math.abs(a.pos.x - b.pos.x) > 50 ? a.pos.x - b.pos.x : a.pos.y - b.pos.y);
 
-                        const simMachines = telemetry.filter(m => m.synthetic)
+                        const simGroup = telemetry.filter(m => m.id.startsWith('SIM_'))
                             .map(m => ({ id: m.id, pos: positions[m.id] }))
                             .filter(m => m.pos)
                             .sort((a, b) => Math.abs(a.pos.x - b.pos.x) > 50 ? a.pos.x - b.pos.x : a.pos.y - b.pos.y);
 
-                        const drawPath = (nodes, primaryColor) => {
-                            return nodes.map((currNode, i) => {
+                        const drawLineGroup = (group, color) => {
+                            return group.map((node, i) => {
                                 if (i === 0) return null;
-                                const prev = nodes[i - 1].pos;
-                                const curr = currNode.pos;
+                                const prev = group[i - 1].pos;
                                 return (
-                                    <g key={`line-${currNode.id}`}>
-                                        <line x1={prev.x + 90} y1={prev.y + 60} x2={curr.x + 90} y2={curr.y + 60} stroke={primaryColor} strokeWidth="3" opacity="0.3" />
-                                        <line x1={prev.x + 90} y1={prev.y + 60} x2={curr.x + 90} y2={curr.y + 60} stroke={primaryColor} strokeWidth="3" strokeDasharray="8 16" style={{ animation: 'led-flow 1s linear infinite' }} />
+                                    <g key={`line-${node.id}`}>
+                                        <line x1={prev.x + 90} y1={prev.y + 60} x2={node.pos.x + 90} y2={node.pos.y + 60} stroke={color} strokeWidth="3" opacity="0.3" />
+                                        <line x1={prev.x + 90} y1={prev.y + 60} x2={node.pos.x + 90} y2={node.pos.y + 60} stroke={color} strokeWidth="3" strokeDasharray="8 16" style={{ animation: 'led-flow 1s linear infinite' }} />
                                     </g>
-                                )
+                                );
                             });
                         };
 
                         return (
                             <>
-                                {drawPath(realMachines, '#38bdf8')}
-                                {drawPath(simMachines, '#8b5cf6')}
+                                {drawLineGroup(realGroup, '#38bdf8')}
+                                {drawLineGroup(simGroup, '#8b5cf6')}
                             </>
                         );
                     })()}
@@ -276,4 +333,4 @@ export default function FloorPlan({
             )}
         </div>
     );
-}
+}x
