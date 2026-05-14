@@ -132,10 +132,11 @@ export default function DiagnosticOverlay({ machine, meta, history, role, invest
                                 </button>
                             </div>
 
+                            {/* UPDATED ROLE MESSAGE FOR MANAGERS */}
                             {role !== 'engineer' && (
                                 <p style={{ color: '#f59e0b', fontSize: '12px', marginTop: '12px', textAlign: 'center', backgroundColor: 'rgba(245, 158, 11, 0.1)', padding: '8px', borderRadius: '6px' }}>
                                     <AlertTriangle size={12} style={{ display: 'inline', marginRight: '4px' }} />
-                                    Switch to Engineer role to use controls.
+                                    {role === 'manager' ? "View-only mode: Managerial access active." : "Switch to Engineer role to use controls."}
                                 </p>
                             )}
                         </div>

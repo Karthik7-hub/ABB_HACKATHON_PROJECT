@@ -1,13 +1,12 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { io } from 'socket.io-client';
-import { Activity, Map as MapIcon, Grid, X, Settings, Power, Search, Filter, ArrowUpDown, Clock3, Eye, Server, Wifi, WifiOff, Plus, Cpu, CircuitBoard, RotateCcw, Trash2, Gauge, Sparkles, Check, ChevronDown } from 'lucide-react';
+import { Activity, Map as MapIcon, Grid, X, Settings, Power, Search, Filter, ArrowUpDown, Clock3, Eye, Server, Wifi, WifiOff, Plus, Cpu, CircuitBoard, RotateCcw, Trash2, Gauge, Sparkles, Check, ChevronDown, TrendingUp, Wand2, Bot, Loader2, CheckCircle2 } from 'lucide-react';
 import { DndContext, closestCenter } from '@dnd-kit/core';
 import { SortableContext, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import './index.css';
 
 import { MACHINE_META, DEFAULT_MACHINE_ORDER, STATUS_WEIGHT, STORAGE_KEY_VIRTUAL_ASSETS, STORAGE_KEY_MAP_NODE_SETTINGS, MACHINE_TYPES } from './utils/constants';
 
-// NEW: We imported the resetVirtualMachineState function!
 import { resolveBackendUrl, generateVirtualTelemetry, appendTelemetryHistory, getMeta, toNumber, formatTime, createVirtualMachine, resetVirtualMachineState } from './utils/helpers';
 
 import { StatCard } from './components/SharedUI';
@@ -15,6 +14,7 @@ import SortableMachineCard from './components/SortableMachineCard';
 import FloorPlan from './components/FloorPlan';
 import DiagnosticOverlay from './components/DiagnosticOverlay';
 import SmartActionCenter from './components/SmartActionCenter';
+import ManagerAnalytics from './components/ManagerAnalytics';
 
 function getSavedVirtualMachines() { try { const saved = JSON.parse(window.localStorage.getItem(STORAGE_KEY_VIRTUAL_ASSETS) || '[]'); return Array.isArray(saved) ? saved : []; } catch { return []; } }
 function saveVirtualMachines(machines) { try { window.localStorage.setItem(STORAGE_KEY_VIRTUAL_ASSETS, JSON.stringify(machines)); } catch { } }
@@ -49,6 +49,12 @@ export default function App() {
   const [newMachineType, setNewMachineType] = useState('Pump');
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [fullscreenGraph, setFullscreenGraph] = useState(null);
+
+  // AI STATES
+  const [showAIPrompt, setShowAIPrompt] = useState(false);
+  const [aiPromptText, setAiPromptText] = useState('');
+  const [isAIGenerating, setIsAIGenerating] = useState(false);
+  const [aiSummary, setAiSummary] = useState(null); // Holds the summary of what was generated
 
   useEffect(() => { document.title = 'Nexus Control System'; }, []);
   useEffect(() => { const interval = window.setInterval(() => setClock(new Date()), 1000); return () => window.clearInterval(interval); }, []);
@@ -166,6 +172,72 @@ export default function App() {
     setViewMode('map');
   }, [newMachineType, role, virtualMachines.length]);
 
+  const handleAIGenerate = useCallback(() => {
+    if (!aiPromptText.trim()) return;
+    setIsAIGenerating(true);
+
+    setTimeout(() => {
+      let normalizedText = aiPromptText.toLowerCase();
+      const wordMap = { 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'a': 1, 'an': 1 };
+      Object.keys(wordMap).forEach(word => {
+        normalizedText = normalizedText.replace(new RegExp(`\\b${word}\\b`, 'g'), wordMap[word]);
+      });
+
+      const types = ['pump', 'compressor', 'valve', 'motor'];
+      let totalNewAssets = [];
+
+      types.forEach(type => {
+        const regex = new RegExp(`(\\d+)\\s+${type}s?`, 'i');
+        const match = normalizedText.match(regex);
+        if (match) {
+          const count = Math.min(parseInt(match[1], 10), 10);
+          const capitalizedType = type.charAt(0).toUpperCase() + type.slice(1);
+          for (let i = 0; i < count; i++) { totalNewAssets.push(capitalizedType); }
+        }
+      });
+
+      if (totalNewAssets.length === 0) {
+        types.forEach(type => {
+          if (normalizedText.includes(type)) {
+            totalNewAssets.push(type.charAt(0).toUpperCase() + type.slice(1));
+          }
+        });
+      }
+
+      if (totalNewAssets.length > 0) {
+        setVirtualMachines(prev => {
+          let currentLength = prev.length;
+          const generated = totalNewAssets.map(type => createVirtualMachine(currentLength++, type));
+          setMachineOrder(prevOrder => [...prevOrder, ...generated.map(m => m.id)]);
+
+          // Group for the summary dialog
+          const grouped = generated.reduce((acc, curr) => {
+            acc[curr.type] = (acc[curr.type] || 0) + 1;
+            return acc;
+          }, {});
+
+          setAiSummary(grouped); // Trigger summary dialog
+          return [...prev, ...generated];
+        });
+      } else {
+        alert("AI couldn't detect a specific machine setup. Try asking: 'Generate 3 pumps and 2 valves'.");
+      }
+      setIsAIGenerating(false);
+    }, 1500);
+  }, [aiPromptText]);
+
+  const closeAIPrompt = useCallback(() => {
+    setShowAIPrompt(false);
+    setAiPromptText('');
+    setAiSummary(null);
+  }, []);
+
+  const confirmAIDeployment = useCallback(() => {
+    closeAIPrompt();
+    setViewMode('map');
+  }, [closeAIPrompt]);
+
+
   const handleRemoveVirtualMachine = useCallback((id) => {
     setVirtualMachines((prev) => prev.filter((a) => a.id !== id));
     setVirtualTelemetry((prev) => prev.filter((m) => m.id !== id));
@@ -186,15 +258,12 @@ export default function App() {
     if (machineMap[machineId]?.synthetic) {
       setVirtualShutdowns((prev) => {
         const next = new Set(prev);
-
-        // NEW: When we restart, we reset the math timer back to 0!
         if (action === 'shutdown') {
           next.add(machineId);
         } else {
           next.delete(machineId);
           resetVirtualMachineState(machineId);
         }
-
         return next;
       });
       setCommandLog((prev) => [{ id: `${Date.now()}-${machineId}`, machineId, action, status: 'executed', timestamp: new Date().toISOString() }, ...prev].slice(0, 7));
@@ -232,10 +301,13 @@ export default function App() {
             </div>
             <div className="header-controls">
               <div className="time-chip"><Clock3 size={14} /><span>{clock.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span></div>
+
               <div className="role-switch">
                 <button type="button" className={role === 'operator' ? 'active' : ''} onClick={() => setRole('operator')}><Eye size={14} /> Operator</button>
                 <button type="button" className={role === 'engineer' ? 'active' : ''} onClick={() => setRole('engineer')}><Settings size={14} /> Engineer</button>
+                <button type="button" className={role === 'manager' ? 'active' : ''} onClick={() => setRole('manager')}><TrendingUp size={14} /> Manager</button>
               </div>
+
               <div className={`status-badge ${connected ? 'status-live' : 'status-disconnected'}`}>
                 <div className={`status-dot ${connected ? 'dot-pulse' : ''}`} />
                 {connected ? <Wifi size={13} /> : <WifiOff size={13} />}<span>{connected ? 'Live' : 'Offline'}</span>
@@ -291,6 +363,7 @@ export default function App() {
                   </div>
                   <div className="engineer-controls" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                     <button type="button" className="premium-action-btn" onClick={() => setShowAddMenu(true)}><Plus size={15} /> Add Machine</button>
+                    <button type="button" className="premium-action-btn" onClick={() => setShowAIPrompt(true)} style={{ background: 'linear-gradient(to right, #8b5cf6, #38bdf8)', border: 'none', color: '#fff', boxShadow: '0 4px 15px rgba(139, 92, 246, 0.4)' }}><Wand2 size={15} /> AI Prompt Builder</button>
                     <button type="button" className="premium-action-btn ghost" onClick={handleResetVirtualMachines} disabled={virtualMachines.length === 0}><RotateCcw size={15} /> Reset Sim</button>
                   </div>
                   {virtualMachines.length > 0 && (
@@ -325,18 +398,24 @@ export default function App() {
               )}
             </section>
 
-            <SmartActionCenter
-              activeAlerts={activeAlerts}
-              ackAlerts={ackAlerts}
-              commandLog={commandLog}
-              machineMeta={machineMeta}
-              showAcknowledged={showAcknowledged}
-              setShowAcknowledged={setShowAcknowledged}
-              onAcknowledge={handleAcknowledge}
-              onAcknowledgeAll={handleAcknowledgeAll}
-              onInvestigate={handleInvestigate}
-              getStatusClass={getStatusClass}
-            />
+            {role === 'manager' ? (
+              <section className="pane right-pane">
+                <ManagerAnalytics telemetry={allTelemetry} />
+              </section>
+            ) : (
+              <SmartActionCenter
+                activeAlerts={activeAlerts}
+                ackAlerts={ackAlerts}
+                commandLog={commandLog}
+                machineMeta={machineMeta}
+                showAcknowledged={showAcknowledged}
+                setShowAcknowledged={setShowAcknowledged}
+                onAcknowledge={handleAcknowledge}
+                onAcknowledgeAll={handleAcknowledgeAll}
+                onInvestigate={handleInvestigate}
+                getStatusClass={getStatusClass}
+              />
+            )}
           </main>
         </>
       )}
@@ -362,6 +441,91 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* ENHANCED AI GENERATOR MODAL WITH SUMMARY STATE */}
+      {showAIPrompt && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ backgroundColor: '#0f172a', padding: '2.5rem', borderRadius: '16px', border: '1px solid rgba(139,92,246,0.4)', width: '600px', maxWidth: '90%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.7), 0 0 40px rgba(139,92,246,0.1)' }}>
+
+            {/* Conditional Render: Success Summary vs Input Prompt */}
+            {aiSummary ? (
+              // --- SUCCESS STATE ---
+              <div style={{ textAlign: 'center', padding: '1rem 0' }}>
+                <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
+                  <CheckCircle2 color="#10b981" size={32} />
+                </div>
+                <h3 style={{ color: '#f8fafc', fontSize: '24px', margin: '0 0 8px 0', fontWeight: 700 }}>Deployment Successful</h3>
+                <p style={{ color: '#94a3b8', fontSize: '14px', margin: '0 0 2rem 0' }}>The AI has auto-configured the following assets and initiated their telemetry engines:</p>
+
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '2rem' }}>
+                  {Object.entries(aiSummary).map(([type, count]) => (
+                    <div key={type} style={{ backgroundColor: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <Sparkles size={16} color="#38bdf8" />
+                      <span style={{ color: '#f8fafc', fontSize: '18px', fontWeight: 700 }}>{count}x</span>
+                      <span style={{ color: '#cbd5e1', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '1px' }}>{type}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={confirmAIDeployment}
+                  style={{ padding: '14px 32px', borderRadius: '10px', border: 'none', background: 'linear-gradient(to right, #8b5cf6, #38bdf8)', color: '#fff', cursor: 'pointer', fontSize: '15px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '8px', boxShadow: '0 10px 25px -5px rgba(56, 189, 248, 0.4)' }}
+                >
+                  Deploy to Digital Twin <MapIcon size={16} />
+                </button>
+              </div>
+            ) : (
+              // --- INPUT STATE ---
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
+                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'linear-gradient(135deg, #8b5cf6, #38bdf8)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Bot color="white" size={24} />
+                  </div>
+                  <div>
+                    <h3 style={{ color: '#f8fafc', fontSize: '20px', margin: 0, fontWeight: 700 }}>AI Auto-Configuration</h3>
+                    <p style={{ color: '#94a3b8', fontSize: '13px', margin: '4px 0 0 0' }}>Type a natural language prompt to instantly build your plant layout.</p>
+                  </div>
+                </div>
+
+                <div style={{ position: 'relative', marginBottom: '2rem' }}>
+                  <textarea
+                    value={aiPromptText}
+                    onChange={(e) => setAiPromptText(e.target.value)}
+                    placeholder="e.g., 'Build me a cooling setup with 3 pumps, 1 compressor, and 2 valves.'"
+                    style={{ width: '100%', height: '120px', padding: '16px', borderRadius: '12px', backgroundColor: '#1e293b', color: '#f8fafc', border: '1px solid rgba(255,255,255,0.1)', fontSize: '16px', outline: 'none', resize: 'none', lineHeight: 1.5 }}
+                    disabled={isAIGenerating}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <p style={{ color: '#64748b', fontSize: '12px', margin: 0 }}>
+                    <strong>Supported:</strong> Pump, Compressor, Valve, Motor
+                  </p>
+
+                  <div style={{ display: 'flex', gap: '1rem' }}>
+                    <button onClick={closeAIPrompt} disabled={isAIGenerating} style={{ padding: '12px 24px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: '14px', fontWeight: 600 }}>
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleAIGenerate}
+                      disabled={isAIGenerating || !aiPromptText.trim()}
+                      style={{ padding: '12px 24px', borderRadius: '10px', border: 'none', background: 'linear-gradient(to right, #8b5cf6, #38bdf8)', color: '#fff', cursor: isAIGenerating ? 'wait' : 'pointer', fontSize: '14px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', opacity: (isAIGenerating || !aiPromptText.trim()) ? 0.6 : 1 }}
+                    >
+                      {isAIGenerating ? (
+                        <><Loader2 size={18} className="spin" /> Parsing Configuration...</>
+                      ) : (
+                        <><Wand2 size={18} /> Generate Machines</>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+
+          </div>
+        </div>
+      )}
+      <style>{`.spin { animation: spin 1s linear infinite; } @keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
