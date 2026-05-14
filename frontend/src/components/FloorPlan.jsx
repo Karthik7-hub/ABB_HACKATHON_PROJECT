@@ -333,4 +333,4 @@ export default function FloorPlan({
             )}
         </div>
     );
-}x
+}
