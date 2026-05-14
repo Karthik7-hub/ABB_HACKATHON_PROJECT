@@ -1,7 +1,7 @@
 import { MACHINE_META, MACHINE_TYPES } from './constants';
 
 // UPDATE THIS with your backend URL from Render (no trailing slash)
-const RENDER_BACKEND_URL = 'https://your-backend-name.onrender.com';
+const RENDER_BACKEND_URL = 'https://abb-hackathon-project.onrender.com/';
 
 export function resolveBackendUrl() {
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
