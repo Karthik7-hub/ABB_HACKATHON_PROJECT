@@ -527,8 +527,8 @@ const boot = async () => {
         });
 
         socket.on('mobile:sensor_data', (data) => {
-            if (data.machineId && data.vibration !== undefined) {
-                simulator.setMobileOverride(data.machineId, data.vibration);
+            if (data.machineId) {
+                simulator.setMobileOverride(data.machineId, data);
             }
         });
 

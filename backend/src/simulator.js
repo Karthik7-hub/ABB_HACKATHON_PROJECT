@@ -391,14 +391,32 @@ class MachineInstance {
   }
 
   generateTelemetry(ecosystem) {
-    const mappedTemp = this.currentValues.temperature || this.currentValues.motor_temp || this.currentValues.joint_temp || 0;
-    const mappedPressure = this.currentValues.pressure || this.currentValues.belt_tension || this.currentValues.torque || 0;
+    let mappedTemp = this.currentValues.temperature || this.currentValues.motor_temp || this.currentValues.joint_temp || 0;
+    let mappedPressure = this.currentValues.pressure || this.currentValues.belt_tension || this.currentValues.torque || 0;
     let mappedVib = this.currentValues.vibration || this.currentValues.error_margin || this.currentValues.current || 0;
 
     if (this.mobileOverride && this.mobileOverride.expiresAt > Date.now()) {
-      mappedVib = this.mobileOverride.vibration;
-      // also override the actual currentValues array so AI layer picks it up
-      this.currentValues.vibration = mappedVib; 
+      // Vibration Override
+      if (this.mobileOverride.vibration !== undefined && this.mobileOverride.vibration !== null) {
+        mappedVib = this.mobileOverride.vibration;
+        if (this.currentValues.vibration !== undefined) this.currentValues.vibration = mappedVib;
+        if (this.currentValues.error_margin !== undefined) this.currentValues.error_margin = mappedVib;
+        if (this.currentValues.current !== undefined) this.currentValues.current = mappedVib;
+      }
+      // Temperature Override
+      if (this.mobileOverride.temperature !== undefined && this.mobileOverride.temperature !== null) {
+        mappedTemp = this.mobileOverride.temperature;
+        if (this.currentValues.temperature !== undefined) this.currentValues.temperature = mappedTemp;
+        if (this.currentValues.motor_temp !== undefined) this.currentValues.motor_temp = mappedTemp;
+        if (this.currentValues.joint_temp !== undefined) this.currentValues.joint_temp = mappedTemp;
+      }
+      // Pressure Override
+      if (this.mobileOverride.pressure !== undefined && this.mobileOverride.pressure !== null) {
+        mappedPressure = this.mobileOverride.pressure;
+        if (this.currentValues.pressure !== undefined) this.currentValues.pressure = mappedPressure;
+        if (this.currentValues.belt_tension !== undefined) this.currentValues.belt_tension = mappedPressure;
+        if (this.currentValues.torque !== undefined) this.currentValues.torque = mappedPressure;
+      }
     } else if (this.mobileOverride && this.mobileOverride.expiresAt <= Date.now()) {
       this.mobileOverride = null;
     }
@@ -706,11 +724,13 @@ class FactorySimulator {
     return this.machines.get(id);
   }
 
-  setMobileOverride(machineId, vibration) {
+  setMobileOverride(machineId, data) {
     const machine = this.machines.get(machineId);
     if (machine) {
         machine.mobileOverride = {
-            vibration,
+            vibration: data.vibration !== undefined ? parseFloat(data.vibration) : undefined,
+            temperature: data.temperature !== undefined ? parseFloat(data.temperature) : undefined,
+            pressure: data.pressure !== undefined ? parseFloat(data.pressure) : undefined,
             expiresAt: Date.now() + 5000 // expires in 5s
         };
     }

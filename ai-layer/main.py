@@ -71,7 +71,7 @@ class MachineData(BaseModel):
 import os
 from pymongo import MongoClient
 
-MONGO_URI = os.getenv('MONGO_URI', 'mongodb://127.0.0.1:27017/abb_digital_twin')
+MONGO_URI = os.getenv('MONGO_URI', 'mongodb://127.0.0.1:27017/abb_trails')
 try:
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)
     db = client.get_database()
@@ -280,41 +280,38 @@ def evaluate_telemetry(data: List[MachineData]):
     
     reasoner = IndustrialReasoner(data)
     
+    # Default design profiles for standard machine types to initialize baselines
+    DEFAULT_MACHINE_PROFILES = {
+        'Pump': {'temp': 60.0, 'press': 120.0, 'vib': 2.0},
+        'Motor': {'temp': 70.0, 'press': 150.0, 'vib': 1.5},
+        'Compressor': {'temp': 75.0, 'press': 250.0, 'vib': 3.0},
+        'Conveyor': {'temp': 55.0, 'press': 800.0, 'vib': 2.5},
+        'Boiler': {'temp': 250.0, 'press': 400.0, 'vib': 2.0},
+        'Valve': {'temp': 25.0, 'press': 100.0, 'vib': 1.0},
+        'RoboticArm': {'temp': 45.0, 'press': 80.0, 'vib': 0.01},
+        'Reactor': {'temp': 92.0, 'press': 142.0, 'vib': 1.8},
+        'Chiller': {'temp': 28.0, 'press': 64.0, 'vib': 1.6}
+    }
+
     # 1. Update online Bayesian learning for all machines
     for item in data:
         hist = get_machine_history(item.id)
         
-        # Get baseline
+        # Get profile baselines
+        profile = DEFAULT_MACHINE_PROFILES.get(item.type, {'temp': 50.0, 'press': 100.0, 'vib': 2.0})
+        p_temp = profile['temp']
+        p_press = profile['press']
+        p_vib = profile['vib']
+
+        # Get baseline from history, falling back to design profile
         if len(hist) < 5:
-            baseline_temp = item.temperature or 1.0
-            baseline_press = item.pressure or 1.0
-            baseline_vib = item.vibration or 1.0
+            baseline_temp = p_temp
+            baseline_press = p_press
+            baseline_vib = p_vib
         else:
-            baseline_temp = np.median([h[0] for h in hist]) or 1.0
-            baseline_press = np.median([h[1] for h in hist]) or 1.0
-            baseline_vib = np.median([h[2] for h in hist]) or 1.0
-            
-        # Append current features
-        features = np.array([item.temperature, item.pressure, item.vibration])
-        hist.append(features.tolist())
-        
-        # Retrieve or create online Bayesian detector
-        detector = detectors.get(item.id)
-        if detector is None:
-            detector = OnlineBayesianAnomalyDetector()
-            detectors[item.id] = detector
-            
-            # Seed the detector with existing history
-            for h_val in hist:
-                detector.update(np.array(h_val))
-                
-        # Perform continuous online update with latest frame
-        detector.update(features)
-        
-        # Calculate Bayesian anomaly probability
-        bayesian_prob = detector.compute_anomaly_probability(features)
-        severity_score = int(bayesian_prob * 100)
-        severity_score = max(1, min(100, severity_score))
+            baseline_temp = np.median([h[0] for h in hist]) or p_temp
+            baseline_press = np.median([h[1] for h in hist]) or p_press
+            baseline_vib = np.median([h[2] for h in hist]) or p_vib
 
         # Override baseline values with custom thresholds if available
         if item.customThresholds:
@@ -325,26 +322,59 @@ def evaluate_telemetry(data: List[MachineData]):
             if item.customThresholds.baseVibration is not None:
                 baseline_vib = item.customThresholds.baseVibration
 
-        # ── Deviation Analysis ──
-        dev_temp = abs(item.temperature - baseline_temp) / baseline_temp if baseline_temp > 0 else 0
-        dev_press = abs(item.pressure - baseline_press) / baseline_press if baseline_press > 0 else 0
-        dev_vib = abs(item.vibration - baseline_vib) / baseline_vib if baseline_vib > 0 else 0
-        max_dev = max(dev_temp, dev_press, dev_vib)
+        # Determine if we should learn from this frame (only if machine is running normally)
+        should_learn = not item.isShutdown and item.machineState not in ['STARTING', 'OFFLINE', 'MAINTENANCE', 'EMERGENCY_SHUTDOWN']
 
-        # Calculate physical deviation-based risk score
-        phys_dev_score = int(max_dev * 400.0)
-        
-        # Combine Bayesian anomaly probability and physical deviation risk score
-        raw_severity = max(severity_score, phys_dev_score)
-        raw_severity = max(1, min(100, raw_severity))
-        
-        # Determine anomaly source
-        if max_dev == dev_temp:
-            anomaly_source = 'temperature'
-        elif max_dev == dev_vib:
-            anomaly_source = 'vibration'
+        # Perform physical deviation analysis
+        # Cooler/smoother operation is physically safe, so we only flag elevated temp and vib
+        dev_temp = max(0.0, item.temperature - baseline_temp) / baseline_temp if baseline_temp > 0 else 0
+        dev_vib = max(0.0, item.vibration - baseline_vib) / baseline_vib if baseline_vib > 0 else 0
+
+        # For pressure, both high and low can be anomalies, but low pressure is normal during startup or if not RUNNING
+        if item.machineState in ['STARTING', 'OFFLINE', 'MAINTENANCE', 'EMERGENCY_SHUTDOWN'] or item.pressure < baseline_press:
+            dev_press = max(0.0, item.pressure - baseline_press) / baseline_press if baseline_press > 0 else 0
         else:
-            anomaly_source = 'pressure'
+            dev_press = abs(item.pressure - baseline_press) / baseline_press if baseline_press > 0 else 0
+
+        if not should_learn:
+            raw_severity = 0
+            severity_score = 0
+            phys_dev_score = 0
+            max_dev = 0.0
+            anomaly_source = 'temperature'
+        else:
+            features = np.array([item.temperature, item.pressure, item.vibration])
+            hist.append(features.tolist())
+            
+            # Retrieve or create online Bayesian detector
+            detector = detectors.get(item.id)
+            if detector is None:
+                detector = OnlineBayesianAnomalyDetector()
+                detectors[item.id] = detector
+                # Seed mean and covariance with design defaults to prevent initial spike
+                detector.mean = np.array([p_temp, p_press, p_vib])
+                detector.cov = np.eye(3) * 1.0
+                
+            detector.update(features)
+            
+            # Calculate Bayesian anomaly probability
+            bayesian_prob = detector.compute_anomaly_probability(features)
+            severity_score = int(bayesian_prob * 100)
+            severity_score = max(1, min(100, severity_score))
+
+            max_dev = max(dev_temp, dev_press, dev_vib)
+            phys_dev_score = int(max_dev * 400.0)
+            
+            # Combine Bayesian probability and physical deviation
+            raw_severity = max(severity_score, phys_dev_score)
+            raw_severity = max(1, min(100, raw_severity))
+            
+            if max_dev == dev_temp:
+                anomaly_source = 'temperature'
+            elif max_dev == dev_vib:
+                anomaly_source = 'vibration'
+            else:
+                anomaly_source = 'pressure'
 
         warn_level = item.customThresholds.warnLimit if (item.customThresholds and item.customThresholds.warnLimit is not None) else 45
         crit_level = item.customThresholds.critLimit if (item.customThresholds and item.customThresholds.critLimit is not None) else 70
