@@ -596,24 +596,6 @@ a:focus-visible {
   margin-top: 0.25rem;
 }
 
-.machine-card {
-  position: relative;
-  overflow: hidden;
-  min-height: 248px;
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-  background:
-    linear-gradient(145deg, rgba(18, 26, 38, 0.98), rgba(12, 18, 27, 0.98)),
-    var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.95rem;
-  box-shadow: var(--shadow-soft);
-  cursor: pointer;
-  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
-}
-
 .machine-card::before {
   content: "";
   position: absolute;
@@ -644,20 +626,11 @@ a:focus-visible {
   box-shadow: var(--shadow);
 }
 
-.machine-card.edit-mode {
-  cursor: default;
-  border-style: dashed;
-}
-
 .machine-card.is-dragging {
   opacity: 0.9;
   transform: scale(1.015);
   border-color: rgba(56, 189, 248, 0.65);
   box-shadow: 0 26px 60px rgba(0, 0, 0, 0.45);
-}
-
-.machine-card.shutdown {
-  opacity: 0.72;
 }
 
 .shutdown-overlay {
@@ -677,13 +650,6 @@ a:focus-visible {
   backdrop-filter: blur(2px);
 }
 
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 0.75rem;
-}
-
 .asset-heading {
   display: flex;
   align-items: flex-start;
@@ -698,14 +664,6 @@ a:focus-visible {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   margin-bottom: 0.15rem;
-}
-
-.machine-id {
-  color: #f8fafc;
-  font-size: 1.05rem;
-  font-weight: 850;
-  line-height: 1.15;
-  overflow-wrap: anywhere;
 }
 
 .machine-time {
@@ -736,20 +694,6 @@ a:focus-visible {
 .drag-handle:disabled {
   cursor: not-allowed;
   opacity: 0.45;
-}
-
-.machine-status-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.33rem;
-  min-height: 28px;
-  border: 1px solid currentColor;
-  border-radius: var(--radius-sm);
-  padding: 0.24rem 0.46rem;
-  font-size: 0.68rem;
-  font-weight: 900;
-  white-space: nowrap;
-  flex: 0 0 auto;
 }
 
 .status-normal {
@@ -791,16 +735,6 @@ a:focus-visible {
 
 .icon-neutral {
   color: var(--text-muted);
-}
-
-.machine-health-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  line-height: 1.35;
 }
 
 .machine-health-row strong {
@@ -1363,6 +1297,30 @@ a:focus-visible {
 
 .btn-primary:hover {
   box-shadow: 0 14px 32px rgba(37, 99, 235, 0.3);
+}
+
+.btn-success {
+  color: #f8fafc;
+  background: linear-gradient(145deg, #059669, #10b981);
+  border-color: rgba(52, 211, 153, 0.4);
+  box-shadow: 0 10px 24px rgba(16, 185, 129, 0.25);
+}
+
+.btn-success:hover {
+  background: linear-gradient(145deg, #10b981, #34d399);
+  box-shadow: 0 14px 32px rgba(16, 185, 129, 0.35);
+}
+
+.btn-danger {
+  color: #fff1f2;
+  background: linear-gradient(145deg, #b91c1c, #dc2626);
+  border-color: rgba(248, 113, 113, 0.4);
+  box-shadow: 0 10px 24px rgba(220, 38, 38, 0.25);
+}
+
+.btn-danger:hover {
+  background: linear-gradient(145deg, #dc2626, #ef4444);
+  box-shadow: 0 14px 32px rgba(220, 38, 38, 0.35);
 }
 
 .btn-shutdown,
@@ -2501,18 +2459,6 @@ a:focus-visible {
   line-height: 1.15;
 }
 
-.map-stage {
-  position: relative;
-  min-height: 610px;
-  margin: 0;
-  overflow: hidden;
-  background:
-    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px),
-    linear-gradient(135deg, rgba(8, 13, 21, 0.92), rgba(2, 6, 23, 0.96));
-  background-size: 32px 32px, 32px 32px, auto;
-}
-
 .map-grid-layer {
   position: absolute;
   inset: 0;
@@ -3414,10 +3360,6 @@ a:focus-visible {
     min-height: auto;
   }
 
-  .map-stage {
-    min-height: 520px;
-  }
-
   .diagnostic-panel {
     top: 76px;
     height: calc(100vh - 76px);
@@ -3492,4 +3434,374 @@ a:focus-visible {
     width: auto;
     margin: 0.8rem 0.8rem 0;
   }
+}
+/* Add Machine Modal */
+.add-machine-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+.add-machine-modal { background: linear-gradient(135deg, #0f172a, #1e293b); border: 1px solid rgba(56,189,248,0.2); border-radius: 20px; padding: 2rem; width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; box-shadow: 0 25px 50px rgba(0,0,0,0.5); }
+.add-machine-header { display: flex; align-items: center; gap: 12px; margin-bottom: 1.5rem; }
+.add-machine-icon { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, #38bdf8, #8b5cf6); display: flex; align-items: center; justify-content: center; }
+.add-machine-title { color: #f8fafc; margin: 0; font-size: 20px; font-weight: 700; }
+.add-machine-subtitle { color: #64748b; margin: 2px 0 0; font-size: 13px; }
+.add-machine-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+.add-machine-label { color: #94a3b8; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 6px; }
+.add-machine-input { width: 100%; padding: 10px 14px; border-radius: 8px; background: #0f172a; border: 1px solid rgba(56,189,248,0.2); color: #f8fafc; font-size: 14px; outline: none; box-sizing: border-box; }
+
+/* Custom HmiSelect Premium Dropdown CSS */
+.hmi-select {
+  position: relative;
+  min-width: 0;
+  z-index: 8;
+  flex: 1;
+}
+
+.hmi-select.open {
+  z-index: 30;
+}
+
+.hmi-select-trigger {
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 10px;
+  background: #0f172a;
+  color: #f8fafc;
+  cursor: pointer;
+  padding: 0 1rem;
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+  position: relative;
+  appearance: none;
+}
+
+.hmi-select-trigger svg {
+  color: #38bdf8;
+  flex: 0 0 auto;
+}
+
+.hmi-select-trigger span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hmi-select-trigger::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid #94a3b8;
+  border-bottom: 2px solid #94a3b8;
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 0.16s ease;
+  flex: 0 0 auto;
+  margin-left: 0.5rem;
+}
+
+.hmi-select.open .hmi-select-trigger {
+  border-color: rgba(56, 189, 248, 0.48);
+}
+
+.hmi-select.open .hmi-select-trigger::after {
+  transform: rotate(225deg) translate(-2px, -1px);
+}
+
+.hmi-select-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  min-width: 180px;
+  overflow: hidden;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 10px;
+  background: #0f172a;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(16px);
+  padding: 0.25rem;
+}
+
+.hmi-select-menu button {
+  width: 100%;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #dbeafe;
+  cursor: pointer;
+  padding: 0.42rem 0.62rem;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.hmi-select-menu button:hover,
+.hmi-select-menu button.selected {
+  background: linear-gradient(145deg, rgba(37, 99, 235, 0.36), rgba(14, 116, 144, 0.2));
+  color: #f8fafc;
+}
+
+/* ── Alert Toast System ── */
+@keyframes toast-slide-in {
+  from { transform: translateX(120%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.alert-toast {
+  animation: toast-slide-in 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.2s ease, opacity 0.3s ease;
+}
+
+.alert-toast:hover {
+  transform: translateX(-4px) scale(1.01);
+}
+
+/* ── Enhanced Card Glassmorphism ── */
+.stat-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+  border-color: rgba(148, 163, 184, 0.25);
+}
+
+/* ── Machine Card Micro-interactions ── */
+.machine-card {
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.22s ease,
+              border-color 0.22s ease;
+}
+
+/* ── Loading Skeleton ── */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, rgba(30, 41, 59, 0.5) 25%, rgba(51, 65, 85, 0.5) 50%, rgba(30, 41, 59, 0.5) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--radius);
+}
+
+/* ── Improved Scrollbar for Panels ── */
+.right-pane::-webkit-scrollbar {
+  width: 6px;
+}
+
+.right-pane::-webkit-scrollbar-thumb {
+  background: rgba(56, 189, 248, 0.15);
+  border-radius: 3px;
+}
+
+.right-pane::-webkit-scrollbar-thumb:hover {
+  background: rgba(56, 189, 248, 0.3);
+}
+
+/* ── Button Hover Enhancements ── */
+.premium-action-btn {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.2s ease;
+}
+
+.premium-action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+.premium-action-btn:active {
+  transform: translateY(0);
+}
+
+/* ── Status Badge Pulse ── */
+.status-live .status-dot {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* ── Role Switch Improvements ── */
+.role-switch {
+  transition: background 0.2s ease;
+}
+
+.role-switch button {
+  transition: all 0.2s ease;
+}
+
+.role-switch button:hover:not(.active) {
+  background: rgba(56, 189, 248, 0.06);
+  color: var(--text);
+}
+
+.role-switch button.active {
+  box-shadow: 0 2px 8px rgba(56, 189, 248, 0.15);
+}
+
+/* Custom HMI Sidebar Input Select Styling */
+.hmi-input-select {
+  width: 100%;
+  padding: 8px 12px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 6px;
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+  padding-right: 32px;
+  box-sizing: border-box;
+}
+
+.hmi-input-select:hover {
+  border-color: rgba(56, 189, 248, 0.48);
+  background: rgba(15, 23, 42, 0.8);
+}
+
+.hmi-input-select:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+}
+
+.hmi-input-select option {
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+.hmi-input-text {
+  width: 100%;
+  padding: 8px 12px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 6px;
+  color: #f8fafc;
+  font-size: 13px;
+  outline: none;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.hmi-input-text:hover {
+  border-color: rgba(56, 189, 248, 0.48);
+  background: rgba(15, 23, 42, 0.8);
+}
+
+.hmi-input-text:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+}
+
+/* HMI Select Dropdown Styling */
+.hmi-select {
+  position: relative;
+  min-width: 170px;
+  z-index: 8;
+}
+
+.hmi-select.open {
+  z-index: 30;
+}
+
+.hmi-select-trigger {
+  width: 100%;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: var(--radius, 8px);
+  background: linear-gradient(145deg, rgba(15, 23, 34, 0.92), rgba(7, 12, 20, 0.86));
+  color: var(--text, #e5edf7);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 24px rgba(0, 0, 0, 0.14);
+  cursor: pointer;
+  padding: 0 0.72rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: left;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hmi-select-trigger svg {
+  color: var(--text-muted, #94a3b8);
+  flex: 0 0 auto;
+}
+
+.hmi-select-trigger span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hmi-select-trigger::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid rgba(186, 230, 253, 0.78);
+  border-bottom: 2px solid rgba(186, 230, 253, 0.78);
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 0.16s ease;
+  flex: 0 0 auto;
+}
+
+.hmi-select.open .hmi-select-trigger {
+  border-color: rgba(56, 189, 248, 0.48);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 2px rgba(56, 189, 248, 0.12), 0 18px 36px rgba(0, 0, 0, 0.24);
+}
+
+.hmi-select.open .hmi-select-trigger::after {
+  transform: rotate(225deg) translate(-2px, -1px);
+}
+
+.hmi-select-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  min-width: 180px;
+  overflow: hidden;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: var(--radius, 8px);
+  background: linear-gradient(180deg, rgba(15, 23, 34, 0.98), rgba(5, 10, 18, 0.98));
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(16px);
+  padding: 0.25rem;
+}
+
+.hmi-select-menu button {
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  border: 0;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: #dbeafe;
+  cursor: pointer;
+  padding: 0.42rem 0.62rem;
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-align: left;
+  outline: none;
+}
+
+.hmi-select-menu button:hover,
+.hmi-select-menu button.selected {
+  background: linear-gradient(145deg, rgba(37, 99, 235, 0.36), rgba(14, 116, 144, 0.2));
+  color: #f8fafc;
 }

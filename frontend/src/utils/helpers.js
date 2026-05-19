@@ -25,8 +25,12 @@ export function formatTime(timestamp) {
   return Number.isNaN(d.getTime()) ? '--:--:--' : d.toLocaleTimeString([], { hour12: false });
 }
 
-export function getMeta(id, registry) {
-  return registry[id] || { label: 'Unknown Asset', type: 'Pump', zone: 'A', criticality: 'Medium' };
+export function getMeta(id, registry, telemetryMachine = null) {
+  if (registry[id]) return registry[id];
+  if (telemetryMachine) {
+    return { label: `${telemetryMachine.type} Unit`, type: telemetryMachine.type, zone: telemetryMachine.zone || 'A', criticality: 'Medium' };
+  }
+  return { label: 'Unknown Asset', type: 'Pump', zone: 'A', criticality: 'Medium' };
 }
 
 export function getStatusTone(machine) {
@@ -162,3 +166,76 @@ export function generateVirtualTelemetry(asset) {
 
   return { id: asset.id, timestamp: new Date().toISOString(), temperature: finalTemp, pressure: finalPressure, vibration: finalVib, ai_status: status, severity_score: score, anomaly_source, synthetic: true };
 }
+
+const STATUS_PRIORITY = {
+  Critical: 100,
+  Warning: 60,
+  Normal: 20,
+  Unknown: 10,
+};
+
+const CRITICALITY_WEIGHT = {
+  High: 35,
+  Medium: 20,
+  Low: 10,
+};
+
+export function buildSmartAlarm(machine, meta) {
+  const severity = Number(machine.severity_score || 0);
+
+  const statusWeight = STATUS_PRIORITY[machine.ai_status] || 0;
+  const criticalityWeight = CRITICALITY_WEIGHT[meta.criticality] || 0;
+
+  const anomalyBoost = machine.anomaly_detected ? 25 : 0;
+
+  const vibrationRisk = Number(machine.vibration || 0) > 5 ? 15 : 0;
+  const thermalRisk = Number(machine.temperature || 0) > 85 ? 15 : 0;
+
+  const escalationProbability = Math.min(
+    100,
+    Math.round(
+      severity * 0.45 +
+      vibrationRisk +
+      thermalRisk +
+      anomalyBoost
+    )
+  );
+  const priorityScore = Math.min(
+    100,
+    Math.round(
+      severity * 0.5 +
+      statusWeight * 0.2 +
+      criticalityWeight * 0.2 +
+      escalationProbability * 0.1
+    )
+  );
+
+  let urgency = 'Informational';
+
+  if (priorityScore >= 85) urgency = 'Immediate';
+  else if (priorityScore >= 70) urgency = 'Escalating';
+  else if (priorityScore >= 45) urgency = 'Warning';
+
+  const estimatedFailureWindow =
+    priorityScore >= 90
+      ? '5-10 minutes'
+      : priorityScore >= 75
+      ? '10-20 minutes'
+      : priorityScore >= 60
+      ? '20-45 minutes'
+      : 'Stable';
+  const rootCause =
+    machine.copilot?.failure_mode ||
+    machine.anomaly_source ||
+    'Unknown anomaly source';
+
+  return {
+    ...machine,
+    priorityScore,
+    escalationProbability,
+    urgency,
+    estimatedFailureWindow,
+    rootCause,
+    aiConfidence: Math.min(99, escalationProbability + 5),
+  };
+}

@@ -1,0 +1,235 @@
+/* ── FloorPlan Zone & Canvas Styles ── */
+
+.map-stage {
+  position: relative;
+  min-height: 610px;
+  margin: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    linear-gradient(135deg, rgba(8, 13, 21, 0.92), rgba(2, 6, 23, 0.96));
+  background-size: 32px 32px, 32px 32px, auto;
+  min-height: 520px;
+}
+
+/* Fullscreen Digital Twin cockpit view */
+.map-container.fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 99999 !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+}
+
+.map-container.fullscreen .map-stage {
+  height: 100% !important;
+  min-height: 100vh !important;
+}
+
+/* ── Zone Cell Styling ── */
+.zone-cell {
+  transition: border-color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
+}
+
+.zone-cell:hover {
+  border-color: currentColor !important;
+  filter: brightness(1.15);
+  z-index: 2;
+}
+
+/* ── Machine Node Styling ── */
+.machine-node {
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, opacity 0.25s ease, transform 0.15s ease;
+}
+
+.machine-node:hover {
+  transform: translateY(-2px);
+  z-index: 25 !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(56, 189, 248, 0.2) !important;
+}
+
+/* ── Flow Edge Animations ── */
+@keyframes led-flow {
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
+}
+
+@keyframes flow-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.9; }
+}
+
+@keyframes ping {
+  75%, 100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+
+/* ── Alert Toast Animations ── */
+@keyframes toast-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes toast-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; transform: translateY(-10px); }
+}
+
+.alert-toast {
+  animation: toast-slide-in 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.3s ease;
+}
+
+.alert-toast:hover {
+  transform: translateX(-4px);
+}
+
+/* ── HUD Button Styles ── */
+.map-mode-btn {
+  padding: 8px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 700;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Specific active modes for the Digital Twin command modes */
+.map-mode-btn.mode-risk.active {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(220, 38, 38, 0.15) 100%);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.5);
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.map-mode-btn.mode-flow.active {
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.25) 0%, rgba(14, 165, 233, 0.15) 100%);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.5);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.map-mode-btn.mode-zone.active {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.25) 0%, rgba(124, 58, 237, 0.15) 100%);
+  color: #a78bfa;
+  border-color: rgba(139, 92, 246, 0.5);
+  box-shadow: 0 0 16px rgba(139, 92, 246, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.map-mode-btn:not(.active) {
+  background-color: rgba(30, 41, 59, 0.4);
+  color: #94a3b8;
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+.map-mode-btn:not(.active):hover {
+  background-color: rgba(56, 189, 248, 0.08);
+  color: #cbd5e1;
+  border-color: rgba(56, 189, 248, 0.2);
+  transform: translateY(-1px);
+}
+
+.map-option-btn {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(12px);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.map-option-btn:hover {
+  border-color: rgba(56, 189, 248, 0.35);
+  background: rgba(56, 189, 248, 0.08);
+  color: #f8fafc;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+}
+
+.map-option-btn.active {
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.2) 0%, rgba(14, 165, 233, 0.1) 100%);
+  border-color: rgba(56, 189, 248, 0.5);
+  color: #38bdf8;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
+}
+
+/* Beautiful custom style for the primary "Save Layout" button action */
+.map-option-btn.save-btn {
+  background: linear-gradient(to right, #0284c7, #4f46e5);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.map-option-btn.save-btn:hover {
+  background: linear-gradient(to right, #0369a1, #4338ca);
+  box-shadow: 0 0 20px rgba(79, 70, 229, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* ── Scrollbar for zone configurator ── */
+.zone-configurator-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.zone-configurator-scroll::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.3);
+  border-radius: 4px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .map-container {
+    height: 500px !important;
+  }
+  
+  .map-mode-btn {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+}
+
+/* ── Pulse dot animation ── */
+.dot-pulse {
+  animation: dot-pulse-anim 1.5s infinite ease-in-out;
+}
+
+@keyframes dot-pulse-anim {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}

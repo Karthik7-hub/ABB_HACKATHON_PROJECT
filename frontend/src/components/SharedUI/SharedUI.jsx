@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Brush, ReferenceLine } from 'recharts';
 import { Maximize, Minimize } from 'lucide-react';
-import { toNumber, formatMetric } from '../utils/helpers';
+import { toNumber, formatMetric } from '../../utils/helpers';
+import './SharedUI.css';
 
 export function StatCard({ icon: Icon, label, value, detail, tone = 'neutral' }) {
     return (
