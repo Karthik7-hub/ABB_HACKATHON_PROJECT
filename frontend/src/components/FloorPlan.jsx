@@ -1,0 +1,336 @@
+import React, { useMemo, useState, useRef, useEffect } from 'react';
+import { X, Power, RotateCcw, Activity, AlertTriangle, CheckCircle2, Thermometer, Gauge, Radio, Maximize, Minimize } from 'lucide-react';
+import { formatMetric, toNumber } from '../utils/helpers';
+
+// Calibrated to fit all 4 zones fully on-screen at 100% zoom
+const CANVAS_W = 1150;
+const CANVAS_H = 680;
+
+export default function FloorPlan({
+    telemetry, metaRegistry, onNodeClick, mapLayout, setMapLayout,
+    role, nodeSettings, selectedNodeId, setSelectedNodeId, onNodeMove, onMachineCommand
+}) {
+    const [isFullscreen, setIsFullscreen] = useState(false);
+
+    // PAN & ZOOM STATES
+    const [zoom, setZoom] = useState(1.0); // Default to 100%
+    const [pan, setPan] = useState({ x: 0, y: 0 });
+    const [isPanning, setIsPanning] = useState(false);
+
+    const containerRef = useRef(null);
+    const zoomRef = useRef(zoom);
+    const panRef = useRef(pan);
+    const clampPanRef = useRef();
+
+    // Keep refs in sync for the event listeners without triggering re-binds
+    useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+    useEffect(() => { panRef.current = pan; }, [pan]);
+
+    // Dynamic Bounding Box
+    const clampPan = (newX, newY, currentZoom) => {
+        const container = containerRef.current;
+        if (!container) return { x: newX, y: newY };
+
+        const viewportW = container.clientWidth;
+        const viewportH = container.clientHeight;
+        const contentW = CANVAS_W * currentZoom;
+        const contentH = CANVAS_H * currentZoom;
+
+        const padding = 60;
+
+        const maxX = Math.max(0, (contentW - viewportW) / 2 + padding);
+        const maxY = Math.max(0, (contentH - viewportH) / 2 + padding);
+
+        return {
+            x: Math.max(-maxX, Math.min(maxX, newX)),
+            y: Math.max(-maxY, Math.min(maxY, newY))
+        };
+    };
+    clampPanRef.current = clampPan;
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const handleWheel = (e) => {
+            if (e.ctrlKey) {
+                e.preventDefault(); // Always trap Ctrl+Scroll for zooming
+                const zoomDirection = e.deltaY > 0 ? -1 : 1;
+                const zoomStep = Math.abs(e.deltaY) < 50 ? 0.02 : 0.08;
+                setZoom(prevZoom => {
+                    const newZoom = Math.min(Math.max(0.3, prevZoom + (zoomDirection * zoomStep)), 3.0);
+                    setPan(prevPan => clampPanRef.current(prevPan.x, prevPan.y, newZoom));
+                    return newZoom;
+                });
+            } else {
+                // Calculate where the pan *wants* to go synchronously
+                const currentPan = panRef.current;
+                const targetX = currentPan.x - e.deltaX;
+                const targetY = currentPan.y - e.deltaY;
+
+                // Clamp it to the boundaries
+                const clampedPan = clampPanRef.current(targetX, targetY, zoomRef.current);
+
+                // If the map actually moved, prevent the page from scrolling
+                if (clampedPan.x !== currentPan.x || clampedPan.y !== currentPan.y) {
+                    e.preventDefault();
+                    setPan(clampedPan);
+                }
+                // If it DIDN'T move (we are at the edge), we skip e.preventDefault() 
+                // and the main webpage will scroll normally!
+            }
+        };
+
+        container.addEventListener('wheel', handleWheel, { passive: false });
+        return () => container.removeEventListener('wheel', handleWheel);
+    }, []);
+
+    const positions = useMemo(() => {
+        const pos = {};
+        telemetry.forEach((machine, index) => {
+            const meta = metaRegistry[machine.id] || {};
+            const customKey = `${mapLayout}_${machine.id}`;
+            const custom = nodeSettings[customKey] || {};
+            let x = 0, y = 0;
+
+            if (mapLayout === 'ecosystem') {
+                const severity = toNumber(machine.severity_score);
+                const radius = 280 - (severity / 100) * 280;
+                const angle = (index * (360 / Math.max(telemetry.length, 1))) * (Math.PI / 180);
+                x = `calc(50% + ${radius * Math.cos(angle)}px - 90px)`;
+                y = `calc(50% + ${radius * Math.sin(angle)}px - 60px)`;
+                pos[machine.id] = { x: custom.x ?? x, y: custom.y ?? y };
+            }
+            else if (mapLayout === 'zones') {
+                const zoneKey = meta.zone || 'D';
+                const zoneMachines = telemetry.filter(m => (metaRegistry[m.id]?.zone || 'D') === zoneKey);
+                const zoneIndex = zoneMachines.findIndex(m => m.id === machine.id);
+
+                const zoneOrigins = {
+                    A: { x: 24, y: 24 },
+                    B: { x: 591, y: 24 },
+                    C: { x: 24, y: 356 },
+                    D: { x: 591, y: 356 }
+                };
+                const origin = zoneOrigins[zoneKey] || zoneOrigins['D'];
+
+                const ZONE_W = 535, ZONE_H = 300;
+                const NODE_W = 180, NODE_H = 135;
+                const TITLE_OFFSET = 60;
+
+                const COLS = Math.min(3, Math.ceil(Math.sqrt(zoneMachines.length)));
+                const col = zoneIndex % COLS;
+                const row = Math.floor(zoneIndex / COLS);
+                const totalCols = Math.min(COLS, zoneMachines.length);
+                const totalRows = Math.ceil(zoneMachines.length / COLS);
+
+                const startX = origin.x + 16;
+                const endX = origin.x + ZONE_W - 16 - NODE_W;
+                const availableW = Math.max(0, endX - startX);
+
+                const startY = origin.y + TITLE_OFFSET;
+                const endY = origin.y + ZONE_H - 16 - NODE_H;
+                const availableH = Math.max(0, endY - startY);
+
+                x = startX + (totalCols > 1 ? col * (availableW / (totalCols - 1)) : availableW / 2);
+                y = startY + (totalRows > 1 ? row * (availableH / (totalRows - 1)) : availableH / 2);
+
+                pos[machine.id] = { x: custom.x ?? x, y: custom.y ?? y };
+            }
+            else if (mapLayout === 'flow') {
+                if (meta.type === 'Pump') { x = 60; y = 80 + (index * 130); }
+                else if (meta.type === 'Valve') { x = 340; y = 80 + (index * 130); }
+                else if (meta.type === 'Compressor') { x = 620; y = 80 + (index * 130); }
+                else { x = 900; y = 80 + (index * 130); }
+                pos[machine.id] = { x: custom.x ?? x, y: custom.y ?? y };
+            }
+        });
+        return pos;
+    }, [telemetry, metaRegistry, mapLayout, nodeSettings]);
+
+    const selectedNode = telemetry.find(m => m.id === selectedNodeId);
+
+    const containerStyle = isFullscreen ? {
+        position: 'fixed', inset: 0, zIndex: 99999, backgroundColor: '#020617', overflow: 'hidden'
+    } : {
+        position: 'relative', width: '100%', height: `700px`, backgroundColor: '#020617',
+        borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(56,189,248,0.2)',
+        boxShadow: 'inset 0 0 100px rgba(0,0,0,0.5)'
+    };
+
+    const handleMouseDown = (e) => {
+        if (e.target.closest('.machine-node') || e.target.closest('.no-pan')) return;
+        setIsPanning(true);
+    };
+    const handleMouseMove = (e) => {
+        if (!isPanning) return;
+        setPan(p => clampPan(p.x + e.movementX, p.y + e.movementY, zoomRef.current));
+    };
+    const handleMouseUp = () => setIsPanning(false);
+
+    return (
+        <div ref={containerRef} className="map-container" style={containerStyle}
+            onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
+            <style>{`@keyframes led-flow { 0% { stroke-dashoffset: 24; } 100% { stroke-dashoffset: 0; } } @keyframes ping { 75%, 100% { transform: scale(2.5); opacity: 0; } }`}</style>
+
+            <div className="no-pan" style={{ position: 'absolute', top: '1.5rem', left: '1.5rem', right: '1.5rem', zIndex: 50, display: 'flex', justifyContent: 'space-between', alignItems: 'center', pointerEvents: 'none' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', backgroundColor: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(8px)', padding: '6px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', pointerEvents: 'auto' }}>
+                    <button onClick={() => setMapLayout('ecosystem')} style={{ padding: '8px 16px', backgroundColor: mapLayout === 'ecosystem' ? 'rgba(56,189,248,0.15)' : 'transparent', color: mapLayout === 'ecosystem' ? '#38bdf8' : '#94a3b8', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s' }}>Risk Command</button>
+                    <button onClick={() => setMapLayout('flow')} style={{ padding: '8px 16px', backgroundColor: mapLayout === 'flow' ? 'rgba(56,189,248,0.15)' : 'transparent', color: mapLayout === 'flow' ? '#38bdf8' : '#94a3b8', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s' }}>Flow Route</button>
+                    <button onClick={() => setMapLayout('zones')} style={{ padding: '8px 16px', backgroundColor: mapLayout === 'zones' ? 'rgba(56,189,248,0.15)' : 'transparent', color: mapLayout === 'zones' ? '#38bdf8' : '#94a3b8', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s' }}>System Zones</button>
+                </div>
+                <button onClick={() => setIsFullscreen(!isFullscreen)} style={{ display: 'flex', alignItems: 'center', gap: '8px', pointerEvents: 'auto', backgroundColor: isFullscreen ? '#ef4444' : 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(8px)', color: isFullscreen ? '#fff' : '#38bdf8', border: isFullscreen ? 'none' : '1px solid rgba(56,189,248,0.3)', padding: '10px 20px', borderRadius: '10px', cursor: 'pointer', fontWeight: 700, boxShadow: '0 10px 25px rgba(0,0,0,0.5)', transition: 'all 0.2s' }}>
+                    {isFullscreen ? <><Minimize size={18} /> Exit Fullscreen</> : <><Maximize size={18} /> Fullscreen Map</>}
+                </button>
+            </div>
+
+            <div className="no-pan" style={{ position: 'absolute', bottom: '1.5rem', right: '1.5rem', zIndex: 50, display: 'flex', alignItems: 'center', gap: '16px', backgroundColor: '#0f172a', padding: '12px 24px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
+                <span style={{ color: '#f8fafc', fontSize: '16px', fontWeight: 700, minWidth: '40px', textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
+                <div style={{ width: '1px', height: '24px', backgroundColor: 'rgba(255,255,255,0.2)' }}></div>
+                <button onClick={() => { setZoom(1.0); setPan({ x: 0, y: 0 }); }} style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', fontSize: '16px', fontWeight: 700, padding: 0 }}>Reset</button>
+            </div>
+
+            <div style={{
+                position: 'absolute', inset: 0, pointerEvents: 'none',
+                backgroundImage: `linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px)`,
+                backgroundSize: `30px 30px`
+            }} />
+
+            <div style={{
+                position: 'absolute',
+                left: '50%', top: '50%',
+                width: `${CANVAS_W}px`, height: `${CANVAS_H}px`,
+                marginLeft: `-${CANVAS_W / 2}px`,
+                marginTop: `-${CANVAS_H / 2}px`,
+                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                transformOrigin: 'center center',
+                cursor: isPanning ? 'grabbing' : 'grab'
+            }}>
+
+                {mapLayout === 'ecosystem' && (
+                    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                        <div style={{ border: '1px dashed rgba(239, 68, 68, 0.4)', width: '200px', height: '200px', borderRadius: '50%', position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', backgroundColor: 'rgba(239, 68, 68, 0.02)' }}></div>
+                        <div style={{ border: '1px dashed rgba(245, 158, 11, 0.4)', width: '400px', height: '400px', borderRadius: '50%', position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', backgroundColor: 'rgba(245, 158, 11, 0.02)' }}></div>
+                        <div style={{ border: '1px dashed rgba(16, 185, 129, 0.4)', width: '600px', height: '600px', borderRadius: '50%', position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', backgroundColor: 'rgba(16, 185, 129, 0.02)' }}></div>
+                    </div>
+                )}
+
+                {mapLayout === 'zones' && (
+                    <div style={{ position: 'absolute', inset: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: '2rem', padding: '1.5rem', pointerEvents: 'none' }}>
+                        {['A', 'B', 'C', 'D'].map(zone => (
+                            <div key={zone} style={{ border: '2px solid rgba(56, 189, 248, 0.1)', borderRadius: '24px', backgroundColor: 'rgba(15, 23, 42, 0.3)', position: 'relative' }}>
+                                <span style={{ position: 'absolute', top: '1.5rem', left: '2rem', color: 'rgba(56, 189, 248, 0.2)', fontSize: '36px', fontWeight: 900, letterSpacing: '8px' }}>ZONE {zone}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {mapLayout === 'flow' && (
+                    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                        <div style={{ position: 'absolute', left: 20, top: 0, bottom: 0, borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: '15px', paddingTop: '30px' }}>
+                            <span style={{ color: '#f59e0b', fontSize: '14px', fontWeight: 800, marginRight: '10px' }}>01</span><span style={{ color: '#f8fafc', fontSize: '18px', fontWeight: 700 }}>Inputs</span>
+                        </div>
+                        <div style={{ position: 'absolute', left: 300, top: 0, bottom: 0, borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: '15px', paddingTop: '30px' }}>
+                            <span style={{ color: '#38bdf8', fontSize: '14px', fontWeight: 800, marginRight: '10px' }}>02</span><span style={{ color: '#f8fafc', fontSize: '18px', fontWeight: 700 }}>Process Core</span>
+                        </div>
+                        <div style={{ position: 'absolute', left: 580, top: 0, bottom: 0, borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: '15px', paddingTop: '30px' }}>
+                            <span style={{ color: '#10b981', fontSize: '14px', fontWeight: 800, marginRight: '10px' }}>03</span><span style={{ color: '#f8fafc', fontSize: '18px', fontWeight: 700 }}>Control</span>
+                        </div>
+                        <div style={{ position: 'absolute', left: 860, top: 0, bottom: 0, borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: '15px', paddingTop: '30px' }}>
+                            <span style={{ color: '#8b5cf6', fontSize: '14px', fontWeight: 800, marginRight: '10px' }}>04</span><span style={{ color: '#f8fafc', fontSize: '18px', fontWeight: 700 }}>Utilities</span>
+                        </div>
+                    </div>
+                )}
+
+                <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1, overflow: 'visible' }}>
+                    {mapLayout === 'flow' && (() => {
+                        const realGroup = telemetry.filter(m => !m.id.startsWith('SIM_'))
+                            .map(m => ({ id: m.id, pos: positions[m.id] }))
+                            .filter(m => m.pos)
+                            .sort((a, b) => Math.abs(a.pos.x - b.pos.x) > 50 ? a.pos.x - b.pos.x : a.pos.y - b.pos.y);
+
+                        const simGroup = telemetry.filter(m => m.id.startsWith('SIM_'))
+                            .map(m => ({ id: m.id, pos: positions[m.id] }))
+                            .filter(m => m.pos)
+                            .sort((a, b) => Math.abs(a.pos.x - b.pos.x) > 50 ? a.pos.x - b.pos.x : a.pos.y - b.pos.y);
+
+                        const drawLineGroup = (group, color) => {
+                            return group.map((node, i) => {
+                                if (i === 0) return null;
+                                const prev = group[i - 1].pos;
+                                return (
+                                    <g key={`line-${node.id}`}>
+                                        <line x1={prev.x + 90} y1={prev.y + 60} x2={node.pos.x + 90} y2={node.pos.y + 60} stroke={color} strokeWidth="3" opacity="0.3" />
+                                        <line x1={prev.x + 90} y1={prev.y + 60} x2={node.pos.x + 90} y2={node.pos.y + 60} stroke={color} strokeWidth="3" strokeDasharray="8 16" style={{ animation: 'led-flow 1s linear infinite' }} />
+                                    </g>
+                                );
+                            });
+                        };
+
+                        return (
+                            <>
+                                {drawLineGroup(realGroup, '#38bdf8')}
+                                {drawLineGroup(simGroup, '#8b5cf6')}
+                            </>
+                        );
+                    })()}
+                </svg>
+
+                {telemetry.map(machine => {
+                    const pos = positions[machine.id]; const meta = metaRegistry[machine.id] || {};
+                    const isOffline = machine.isShutdown, isWarning = machine.ai_status === 'Warning' || machine.ai_status === 'Critical';
+                    const statusColor = isOffline ? '#64748b' : machine.ai_status === 'Critical' ? '#ef4444' : machine.ai_status === 'Warning' ? '#f59e0b' : '#10b981';
+                    const isSelected = selectedNodeId === machine.id, canDrag = role === 'engineer' && mapLayout !== 'ecosystem';
+
+                    if (!pos) return null;
+                    return (
+                        <div
+                            key={machine.id} className="machine-node"
+                            onClick={() => role === 'engineer' ? setSelectedNodeId(machine.id) : onNodeClick(machine.id)}
+                            draggable={canDrag}
+                            onDragEnd={(e) => {
+                                if (!canDrag) return;
+                                const containerRect = e.currentTarget.closest('.map-container').getBoundingClientRect();
+                                const centerX = containerRect.width / 2;
+                                const centerY = containerRect.height / 2;
+                                const mouseX = e.clientX - containerRect.left;
+                                const mouseY = e.clientY - containerRect.top;
+                                const canvasX = (mouseX - centerX - pan.x) / zoom + CANVAS_W / 2 - 90;
+                                const canvasY = (mouseY - centerY - pan.y) / zoom + CANVAS_H / 2 - 60;
+                                onNodeMove(`${mapLayout}_${machine.id}`, { x: canvasX, y: canvasY });
+                            }}
+                            style={{ position: 'absolute', left: pos.x, top: pos.y, width: '180px', backgroundColor: '#0f172a', border: `1px solid ${isSelected ? '#38bdf8' : statusColor}`, borderRadius: '12px', cursor: canDrag ? 'move' : 'pointer', boxShadow: isSelected ? '0 0 0 2px rgba(56,189,248,0.5)' : `0 10px 15px -3px rgba(0,0,0,0.5), 0 0 20px ${isWarning && !isOffline ? statusColor + '40' : 'transparent'}`, zIndex: isSelected ? 20 : 5, transition: mapLayout === 'ecosystem' ? 'left 0.5s ease-out, top 0.5s ease-out, border-color 0.2s' : 'border-color 0.2s, box-shadow 0.2s' }}
+                        >
+                            {isWarning && !isOffline && (
+                                <div style={{ position: 'absolute', top: '-6px', right: '-6px', width: '16px', height: '16px' }}><span style={{ position: 'absolute', width: '100%', height: '100%', backgroundColor: statusColor, borderRadius: '50%', opacity: 0.7, animation: 'ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite' }}></span><span style={{ position: 'absolute', width: '100%', height: '100%', backgroundColor: statusColor, borderRadius: '50%' }}></span></div>
+                            )}
+                            <div style={{ padding: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
+                                    <p style={{ color: '#f8fafc', fontSize: '14px', fontWeight: 700, margin: 0 }}>{machine.id}</p>{isOffline ? <Power size={14} color="#ef4444" /> : isWarning ? <AlertTriangle size={14} color={statusColor} /> : <CheckCircle2 size={14} color={statusColor} />}
+                                </div>
+                                <p style={{ color: '#64748b', fontSize: '10px', textTransform: 'uppercase', margin: 0, fontWeight: 700, letterSpacing: '1px' }}>{meta.type || 'Unknown'}</p>
+                            </div>
+                            <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '6px', backgroundColor: 'rgba(0,0,0,0.2)', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', pointerEvents: 'none' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Thermometer size={12} /> Temp</span><span style={{ color: machine.anomaly_source === 'temperature' ? statusColor : '#f8fafc', fontWeight: machine.anomaly_source === 'temperature' ? 700 : 400 }}>{formatMetric(machine.temperature, 0)}°C</span></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Gauge size={12} /> Press</span><span style={{ color: machine.anomaly_source === 'pressure' ? statusColor : '#f8fafc', fontWeight: machine.anomaly_source === 'pressure' ? 700 : 400 }}>{formatMetric(machine.pressure, 0)} bar</span></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Radio size={12} /> Vib</span><span style={{ color: machine.anomaly_source === 'vibration' ? statusColor : '#f8fafc', fontWeight: machine.anomaly_source === 'vibration' ? 700 : 400 }}>{formatMetric(machine.vibration, 1)} mm/s</span></div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {selectedNodeId && selectedNode && (
+                <div className="no-pan" style={{ position: 'absolute', top: '5.5rem', right: '1.5rem', width: '320px', backgroundColor: 'rgba(15, 23, 42, 0.95)', backdropFilter: 'blur(10px)', border: '1px solid rgba(56,189,248,0.3)', borderRadius: '12px', padding: '1.5rem', zIndex: 50, boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+                        <div><p style={{ fontSize: '10px', color: '#38bdf8', fontWeight: 700, letterSpacing: '1px', margin: '0 0 4px 0' }}>ENGINEER NODE STUDIO</p><h3 style={{ fontSize: '20px', color: '#f8fafc', margin: 0 }}>{selectedNodeId}</h3></div>
+                        <button onClick={(e) => { e.stopPropagation(); setSelectedNodeId(null); }} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px' }} onMouseOver={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'} onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}><X size={20} /></button>
+                    </div>
+                    <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}><button onClick={() => onNodeClick(selectedNodeId)} style={{ flex: 1, padding: '10px', backgroundColor: 'rgba(56,189,248,0.1)', color: '#38bdf8', border: '1px solid rgba(56,189,248,0.2)', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}><Activity size={14} /> Full Diagnose</button></div>
+                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '1.5rem' }}><button onClick={() => onMachineCommand(selectedNodeId, selectedNode.isShutdown ? 'restart' : 'shutdown')} style={{ width: '100%', padding: '12px', backgroundColor: selectedNode.isShutdown ? '#10b981' : '#ef4444', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>{selectedNode.isShutdown ? <><RotateCcw size={16} /> Restart Machine</> : <><Power size={16} /> Shut Down</>}</button></div>
+                </div>
+            )}
+        </div>
+    );
+}
